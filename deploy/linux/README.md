@@ -395,7 +395,9 @@ gh run list --branch main --limit 1         # CI conclusion for HEAD must be suc
 git tag -a vX.Y.Z <sha> -m "one-line release notes"
 git push origin vX.Y.Z
 #    NOTE: .githooks/pre-push is unconditional — the TAG push runs the full local gate too (~4 min;
-#    use TMPDIR=/home/emma/.cache/tmp). A "hung" tag push is almost certainly the gate, not the network.
+#    use a fresh folder per task, TMPDIR=/home/emma/.cache/tmp/<task>, removed after; since ISS-99 the
+#    backend suite leaves nothing behind, so this is advice, not a requirement). A "hung" tag push is
+#    almost certainly the gate, not the network.
 # 4) WAIT for the release gate — NEVER re-pin on red or pending:
 gh run watch $(gh run list --limit 5 --json databaseId,headBranch \
   --jq '[.[]|select(.headBranch=="vX.Y.Z")][0].databaseId') --exit-status
@@ -417,13 +419,19 @@ curl -sI -m5 localhost:5433/icon-192.png | grep -i 'content-type: image/png'   #
 ```
 **Config-shape migration (UPDATE_PLAN).** From the release that carries `providers:`, the config is
 migrated **by `install.sh` at the cutover** — with the service verifiably stopped — not lazily on some
-later write. **On a run that actually rewrites the config** it writes a timestamped 0600 copy to
-`~/.ctrl-b/backups/config.yaml.<UTCstamp>` first, and prints the path (an already-stamped config that needs
-nothing gets no copy — `config_migration/__init__.py` `apply`; these copies are never pruned). The new build also **refuses to start** on a config it cannot migrate or load (exit 78,
-terminal — the unit will not retry), naming the one command that fixes it in the journal.
-**Rolling back across that release REQUIRES the config restore in §Rollback → CONFIG** — a tag revert
-alone leaves the older build reading a config whose `providers:` it does not understand, and because its
-sections tolerate unknown keys it boots "healthy" with **zero providers**: chat and voice silently dead.
+later write. **On a run that actually rewrites the config** it first writes timestamped 0600 copies of
+everything it is about to touch — `~/.ctrl-b/backups/config.yaml.<UTCstamp>`, plus
+`~/.ctrl-b/backups/<agent>--agent.yaml.<UTCstamp>` for every agent file it rewrites, all under ONE stamp
+(one run = one backup set) — and prints the paths (an already-stamped config that needs nothing gets no
+copy — `config_migration/__init__.py` `apply`; these copies are never pruned). The new build also
+**refuses to start** on a config it cannot migrate or load (exit 78, terminal — the unit will not retry),
+naming the one command that fixes it in the journal.
+**Rolling back across a release that moved the config shape REQUIRES the config restore first** (§Rollback
+→ CONFIG). What a tag revert alone does depends on the tag you go back to: a **runner-era** tag (v1.3.0 or
+later) **refuses** a config stamped by a newer build — its installer's preflight exits 78 before the cutover,
+so prod stays as it was (down, after a failed update) until the backup set is put back; a **pre-runner** tag (v1.2.1 or older) has no check, tolerates
+unknown keys and boots "healthy" with **zero providers** once the file uses `providers:` — chat and voice
+silently dead.
 
 **Steps 5–6 in one command** — `update.sh` does the tag checks, the CI gate, the compatibility
 precheck and its own health verification around `install.sh`, and reports exactly what state prod is in
@@ -449,9 +457,20 @@ tag + its commit, or any conclusion but `success` → it refuses (exit 1) unless
 > fix-carrying tag with the bootstrap form and prod lands a working updater again. (v1.3.1 is
 > tagged but was never deployed — it carries the bug; don't roll back onto it.)
 
-**Rolling back is NOT `update.sh v(prev)`** when the previous tag predates this release: that build's
-`install.sh` swallows a failed stop and has no health gate, so the updater refuses to drive it and
-prints the manual sequence instead. Use **§Rollback** below.
+**For a v1.3.0+ previous tag, `update.sh v(prev)` IS the rollback** — it prints the restore when one is
+needed: when the config on disk is newer than `v(prev)` reads, it refuses (exit 78) and prints the exact
+`cp -p` lines for every file of the right backup set (config and agent files of one stamp), then "re-run
+this same command"; do them and re-run. **For a pre-runner previous tag (v1.2.1 or older) it is NOT**:
+that build's `install.sh` swallows a failed stop and has no health gate, so the updater refuses to drive
+it and prints the manual sequence instead. Use **§Rollback** below.
+
+**The updater that runs is the one in the tree you are LEAVING.** `update.sh` checks out the new tag
+while it runs, but the copy executing is the one that was on disk when you started it — the previous
+release's. So a fix to the updater protects the update AFTER the release that ships it. For the first
+release after v1.7.12 that bumps `backend/app/config_migration/VERSION` (the only kind of release whose
+failure report can need a config restore), run the updater with the bootstrap form above —
+`git -C ~/apps/ctrl-b show vX.Y.Z:deploy/linux/update.sh | bash -s -- vX.Y.Z` — so the ISS-90 report
+(UPDATE_PLAN §18) is the one that runs.
 
 The manual sequence below remains the explicit fallback and is what `update.sh` orchestrates.
 **Tags are immutable** — never re-point one; a bad release gets `vX.Y.Z+1` (or roll back). The
@@ -473,31 +492,66 @@ git worktree remove ~/github/ctrl-b-hotfix && git push origin --delete fix/vX.Y.
 ## Rollback
 **Execute top to bottom.** The order is the safety property: an earlier draft of this section listed the
 code revert first and only afterwards said the config restore had to precede it — a cold operator
-following it starts the old build on a config it cannot read, which boots "healthy" with **zero
-providers** (chat and voice silently dead). Skip a step only when the decision line says it does not
-apply to you.
+following it starts the old build on a config it cannot read: a pre-runner tag (v1.2.1 or older) boots
+"healthy" with **zero providers** (chat and voice silently dead), and a runner-era tag (v1.3.0+) refuses
+at its preflight (exit 78) and prod stays as it was. Skip a step only when the decision line says it does
+not apply to you. **What `update.sh` decides for you, and what it does not:**
+- **After a FAILED update**, its report names the exact backups to restore (config and agent files of one
+  stamp) — including a half-finished migration (agent files rewritten, the config commit not reached),
+  which the migrator's own run record names exactly — or says the tag revert alone is enough, or that it
+  cannot tell.
+- **`update.sh <any tag>`** — `update.sh v(prev)` included (v1.3.0+ tags) — refuses (exit 78) and prints the
+  set to put back on BOTH: a config SHAPE newer than the tag reads, and an open run record (a half-finished
+  migration, whose shape did not move). Do it, then re-run the same command. (A half-finished migration
+  left by a migrator from before the run records — every backup on this box today — cannot be detected;
+  no step pending on prod touches agent files, so none can exist.)
+- **Step 3 (DATA)** is always your decision; neither one restores the database.
+Step 2 below is the manual method both point at when they cannot decide (an unreadable marker, an unknown
+previous version, no qualifying backup).
 
 ```bash
 # 1. STOP, and confirm it actually stopped. Nothing below may run against a live writer.
 systemctl --user stop ctrl-b-dashboard
 systemctl --user is-active ctrl-b-dashboard        # must print: inactive  (or: failed)
 
-# 2. CONFIG — MANDATORY when the release you are leaving migrated the config shape.
-#    Decide: does ~/.ctrl-b/config.yaml contain a `config_version:` line that the older tag predates?
-#    (`update.sh`'s compatibility precheck refuses a deploy whose tag cannot read the on-disk config.)
-#    ⚠ DO NOT TRUST `update.sh`'s FAILURE REPORT HERE (ISS-90, open): its failure branch reads the marker
-#    WITHOUT stripping the migrator's end-of-line comment (update.sh: `parse_version "${now_line#config_version:}"`,
-#    where the precheck correctly uses `marker_value`), so on any stamped config it prints "the config was NOT
-#    migrated … the tag revert alone is sufficient" EVEN WHEN THIS RUN MIGRATED IT — following that boots the
-#    old build with zero providers. Decide by comparing instead:
-grep -m1 '^config_version:' ~/.ctrl-b/config.yaml  # vs the old tag's: git -C ~/apps/ctrl-b show v(prev):backend/app/config_migration/VERSION
-ls -t ~/.ctrl-b/backups/config.yaml.*              # newest = the copy taken by the update you are undoing
-cp -p ~/.ctrl-b/backups/config.yaml.<UTCstamp> ~/.ctrl-b/config.yaml     # keeps 0600
-#    Not sure which file? install.sh printed the backup path when it migrated (the failure report only
-#    prints a generic listing). Match the timestamp to the update you are undoing — do NOT assume
-#    "newest" if other runs happened since.
+# 2. CONFIG — MANDATORY when the config on disk is at a shape the older tag cannot read (the manual
+#    method; `update.sh` prints the same restore, already decided, when it can — see above).
+#    Decide: compare the config's marker with the shape the older tag understands:
+grep -m1 '^config_version:' ~/.ctrl-b/config.yaml  # N, or no line = 0. Anything but a plain integer: stop, fix it by hand
+git -C ~/apps/ctrl-b show v(prev):backend/app/config_migration/VERSION   # M; no such file = a pre-runner tag = 0
+#    N <= M → skip to step 3 — UNLESS an OPEN run record exists (below): then restore ITS set first.
+#    N > M → restore the BACKUP SET taken by the update you are undoing:
+ls ~/.ctrl-b/backups/*.run 2>/dev/null              # an OPEN run record = a migration that rewrote agent files
+#    and never committed. Its lines are `backups/<file><TAB><live path>` (relative to ~/.ctrl-b): put
+#    back EVERY listed file (cp -p ~/.ctrl-b/backups/<file> ~/.ctrl-b/<live path>), then CLOSE it — the
+#    record's state is its NAME, so it never reopens: update.sh's printed restore ends with the guarded
+#    line `cmp -s <b1> <l1> && cmp -s <b2> <l2> … && mv <record> <record>.resolved` (it renames only when
+#    every file is back); if you skip it, the next update.sh sees every file back and renames it itself.
+#    The four names: `.run` open · `.run.committed` finished · `.run.superseded` a later run committed
+#    over it (its set is still the pre-state for a rollback, ISS-114 — when update.sh offers it, its restore
+#    ends with the same guarded line, and once its set is back it is renamed `.run.resolved` too, so it is
+#    never offered again) · `.run.resolved` closed without a commit. Deliberately fixing FORWARD instead of restoring (you accept the half-written agent files)?
+#    `mv ~/.ctrl-b/backups/<record> ~/.ctrl-b/backups/<record>.resolved` — the manual escape; a re-run of
+#    the migration over that state loses data step 5 would have derived (ISS-114). An EMPTY or truncated
+#    record (a crash between its creation and its fsync) is "broken" and blocks until that same `mv`.
+ls ~/.ctrl-b/backups/                              # the migration's sets: config.yaml.<UTCstamp> + <agent>--agent.yaml.<UTCstamp>
+#    The set to restore = the NEWEST stamp whose file is named EXACTLY config.yaml.<YYYYmmddTHHMMSSZ>
+#    or config.yaml.<YYYYmmddTHHMMSSZ>-<N> (two migrations in one second number their files -2, -3…;
+#    take the highest N of that stamp, per file; anything else after the Z — hand copies like
+#    config.yaml.<stamp>.manual or config.yaml.manual-… — never qualifies) AND whose own
+#    `config_version:` is M or below (grep it). Then put back ALL files of that
+#    one stamp — the config AND every <agent>--agent.yaml.<same stamp> — never the config alone (a
+#    config-only restore leaves agent files in the new shape; re-running the migration then does NOT
+#    repair them — ISS-114):
+cp -p ~/.ctrl-b/backups/config.yaml.<UTCstamp> ~/.ctrl-b/config.yaml                      # keeps 0600
+cp -p ~/.ctrl-b/backups/<agent>--agent.yaml.<UTCstamp> ~/.ctrl-b/agents/<agent>/agent.yaml   # one line per agent file
+grep -m1 '^config_version:' ~/.ctrl-b/config.yaml  # must now show M or less, or no line at all
+#    This discards every config or agent edit made after that stamp. No qualifying file → do not
+#    improvise: the older tag cannot read this config; fix forward instead.
 
-# 3. DATA — only if the bad release's DB migrations mangled the database:
+# 3. DATA — only if the bad release's DB migrations mangled the database. DB snapshots are named in
+#    LOCAL time (ctrlb-YYYYmmdd-HHMMSS.db.gz), config backups in UTC (…<YYYYmmddTHHMMSS>Z): convert
+#    before matching a snapshot to the update you are undoing.
 rm -f ~/.ctrl-b/ctrlb.db-wal ~/.ctrl-b/ctrlb.db-shm     # stale sidecars MUST go (WAL mismatch = corruption)
 gunzip -c ~/.ctrl-b/backups/ctrlb-<ts>.db.gz > ~/.ctrl-b/ctrlb.db
 sqlite3 ~/.ctrl-b/ctrlb.db 'PRAGMA integrity_check;'    # must print: ok
@@ -505,7 +559,7 @@ sqlite3 ~/.ctrl-b/ctrlb.db 'PRAGMA integrity_check;'    # must print: ok
 # 4. CODE — one checkout, one install, now that config and data are what the old build expects:
 cd ~/apps/ctrl-b && git checkout v(prev) && bash deploy/linux/install.sh prod
 
-# 5. VERIFY BY HAND — a tag predating this release cannot self-verify (no health gate in its installer):
+# 5. VERIFY BY HAND — a tag before v1.3.0 cannot self-verify (no health gate in its installer):
 curl -s -m5 localhost:5433/api/health                   # {"status":"ok","version":"(prev)",...}
 systemctl --user is-active ctrl-b-dashboard             # active
 # then open the dashboard on a device before calling it done.
@@ -519,8 +573,10 @@ systemctl --user is-active ctrl-b-dashboard             # active
 installed by v1.5.1+ stays live on every device until site data is cleared there by hand. Roll back TO
 v1.5.1 (or fix forward); go deeper only accepting that device-side cleanup.
 
-Schema compatibility across a rollback is guaranteed by the **expand/contract policy** (D32 amendment):
-destructive migrations land at the earliest one release after the code stopped using the old shape.
+**DB** schema compatibility across a rollback is guaranteed by the **expand/contract policy** (D32
+amendment): destructive DB migrations land at the earliest one release after the code stopped using the
+old shape. It does NOT cover `config.yaml`: the migrator refuses a newer stamp by design, and a config
+rollback = restore the run's backup set (step 2; UPDATE_PLAN §6/§18).
 
 **GitHub down at promote time?** Prod can fetch the tag straight from the workspace over the filesystem:
 `git -C ~/apps/ctrl-b fetch ~/github/ctrl-b 'refs/tags/*:refs/tags/*'` — same commit, LAN-only.
@@ -530,8 +586,18 @@ destructive migrations land at the earliest one release after the code stopped u
 online backup (`sqlite3 .backup` — WAL-safe; a plain `cp` of a live WAL database is not), checks it with
 `PRAGMA integrity_check`, gzips it to `~/.ctrl-b/backups/ctrlb-YYYYmmdd-HHMMSS.db.gz`, and **keeps the newest
 10** (`CTRLB_BACKUP_KEEP=<n>` overrides). Prod only, and only when `ctrlb.db` exists; **dev never takes a
-snapshot.** (2) The config migration writes `~/.ctrl-b/backups/config.yaml.<UTCstamp>` (0600, fsync'd) only on a
-run that actually rewrites the config; those are never pruned.
+snapshot.** (2) The config migration writes `~/.ctrl-b/backups/config.yaml.<UTCstamp>` — plus
+`~/.ctrl-b/backups/<agent>--agent.yaml.<UTCstamp>` for every agent file it rewrites, under the same stamp —
+(0600, fsync'd) only on a run that actually rewrites the config; those are never pruned (a second run in
+the same UTC second numbers its files `….<UTCstamp>-2`). A run that rewrites agent files also leaves its
+**run record** `config.yaml.<UTCstamp>[-N].run` beside them (0600; renamed `….run.committed` when the run
+commits, `….run.superseded` when a later run commits over an unfinished one, `….run.resolved` when it is
+closed without a commit — by `update.sh` once every listed file is back, or by the operator's `mv`; the
+state is the NAME, never a sibling file — §Rollback step 2). Two migrations at once (a manual `--apply`
+during an update) are outside this contract. The bare `config.yaml.<UTCstamp>[-N]` name and the `.run*`
+suffixes are reserved for the migration: `update.sh` and §Rollback step 2 find the
+set to restore by that exact name, so a **manual copy must NOT use it** — give it a suffix, as the
+example below does (`….manual`).
 
 > ⚠ **The prune glob is `ctrlb-*.db.gz`** (`install.sh`, the `ls -1t "$BKD"/ctrlb-*.db.gz | tail -n +11 | xargs rm`
 > line), so a hand-made snapshot whose name starts with `ctrlb-` — e.g. `ctrlb-manual-pre-v1.7.10-….db.gz`,
@@ -618,13 +684,39 @@ read as the second argument only.
 - **Refuses:** a tree that is not `~/apps/ctrl-b` · `CTRLB_CONFIG` set · a `.env` in the prod tree · local
   changes in the prod tree · the lock held · a tag missing on origin · a CI release gate it cannot verify as
   `success` (`gh` missing or not logged in, no push-event run for the tag and its commit, any other conclusion)
-  unless `--force` · a tag that cannot read the config's shape on disk, or an unstamped config already carrying
-  `providers:` against a pre-migration tag (exit 78) · a tag that predates the safe installer (it prints the
-  manual sequence instead — §Rollback).
-- **Exit codes:** 0 updated and verified · 1 refused or failed · 2 usage · 78 config incompatible with the tag.
-- On a failure after `install.sh` ran it prints the observed state and a rollback sequence; ⚠ its "config was
-  NOT migrated" line is wrong on a stamped config ([ISS-90](../../docs/ISSUES.md)) — decide as §Rollback step 2
-  says.
+  unless `--force` — the gate is looked up **per tag** (`gh run list --branch <tag>`), so an old tag's run never
+  falls out of the window · a tag whose tree cannot be read, or whose `config_migration/VERSION` blob is not
+  local in the blob:none prod clone (it names the `git fetch` to run) · a malformed `config_version:` line on
+  disk, a damaged VERSION in the tag, a tag that cannot read the config's shape on disk (it prints the exact
+  restore, then "re-run this same command"), an OPEN run record of the migrator (a migration that rewrote agent
+  files and never committed — it prints the record's set, then "re-run this same command"), or an unstamped
+  config already carrying `providers:` against a pre-migration tag (exit 78) · a tag that predates the safe installer (it prints the manual sequence instead —
+  §Rollback).
+- **Exit codes:** 0 updated and verified, or **already serving the tag** (the tree is at it, the unit is
+  `active`, and `/api/health` reports the tag's version from the unit's `MainPID` → "✓ already at <tag> and
+  serving it — nothing to update") · 1 refused or failed · 2 usage · 78 config incompatible with the tag.
+- **A retry:** when the tree is already at the tag but the service is not serving it (a previous run of this
+  update did not finish, or the service is down — it claims neither), it prints "-- retrying <tag> … you came
+  from <from> per the git reflog" and takes `<from>` from the newest reflog checkout hop away from another
+  commit (after a CHAIN of failed updates that is the last failed target, which the banner warns about); no
+  reflog entry → the version you came from is "unknown" and the report says so. The failure report's tree line
+  then reads "tree: at <tag> (not moved by this run; …)".
+- **The report** (on success, the rollback hint; on a failure after `install.sh` ran, the observed unit state,
+  the tree, the installer's exit code, then the rollback advice) is decided by ONE predicate: a restore is
+  needed when the config's shape NOW is above what `<from>` reads, or when an OPEN run record exists (a
+  migration that rewrote agent files and never committed — the migrator's own record, so no clock or reflog is
+  involved; step 5 refuses on it too, on any tag). Otherwise the tag revert alone is enough, and it says so with
+  the shapes. When a restore is needed it prints the whole backup set of one stamp — `cp -p` per file, config
+  and agent files, every path shell-quoted — from the open record's exact list, or the set picked by shape,
+  labelled "taken during this run" or "taken earlier" with its date and shape (a same-second collision's `-N`
+  files count, the highest suffix per file); when a superseded record holds the real pre-state behind that set,
+  its list is printed instead. A record that is malformed or names a missing backup, or no qualifying backup,
+  prints a "stop here" line instead of the checkout. It also CLOSES records whose files prove them closed, by
+  renaming them (under the deploy lock): every file back → `.run.resolved`; the live config already above the
+  record's shape (a crash right after the commit) → `.run.committed`; every failure
+  report also says "if <from> itself never finished deploying, go back further" (a chain of failed updates); for a partial migration it says to put the whole set back first (re-running the migration
+  does not repair that state — [ISS-114](../../docs/ISSUES.md)). An unreadable marker or an unknown `<from>` is
+  reported as unknown, never as "revert alone". The full rule: UPDATE_PLAN §18.
 
 **`deploy/bootstrap.py`** — the FIRST-deploy orchestrator, run from a checkout that holds `config.yaml`, with
 `backend/.venv/bin/python` (it imports paramiko + PyYAML). Its flags are listed under §Deploy A

@@ -157,9 +157,8 @@ Restoring is in [`deploy/linux/README.md`](../../deploy/linux/README.md) §Rollb
 - **Re-running `bootstrap.py` on an installed server is not an update**: it checks out the newest
   release tag and installs it without the safety checks `update.sh` makes
   ([ISS-94](../ISSUES.md)). Update with `update.sh`.
-- **After a failed update, do not trust `update.sh`'s "config was NOT migrated" line on its own**:
-  it can say so after a run that did migrate ([ISS-90](../ISSUES.md)). Compare the `config_version:`
-  line of `config.yaml` with the newest `backups/config.yaml.*` before rolling back.
+- **After a failed update, `update.sh` names the exact backups to restore** (config and agent files of
+  one stamp), or says it cannot and points at the runbook's §Rollback step 2.
 
 ## Under the hood
 

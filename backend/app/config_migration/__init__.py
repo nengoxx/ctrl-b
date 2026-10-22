@@ -41,8 +41,10 @@ own raise site; what survives is a category, a location and a key name.
 from __future__ import annotations
 
 import argparse
+import filecmp
 import hashlib
 import os
+import re
 import stat
 import sys
 from collections.abc import Callable, Mapping, Sequence
@@ -69,6 +71,7 @@ from app.config import (
     sanitise_validation_error,
     yaml_rt,
 )
+from app.core.fsutil import fsync_dir
 
 _HERE = Path(__file__).resolve().parent
 
@@ -371,8 +374,14 @@ def _unresolved_config_path() -> Path:
     override = os.environ.get("CTRLB_CONFIG")
     if override:  # `.absolute()`, never `.resolve()`: absolute for the operator, symlink-ness intact
         return Path(override).expanduser().absolute()
+    return _unresolved_home() / "config.yaml"
+
+
+def _unresolved_home() -> Path:
+    """`$CTRLB_HOME` as the operator spelled it (`~` expanded, NOT resolved) — the base the config path
+    above is built on. `home_path()` resolves; a symlinked home makes the two differ lexically."""
     home = os.environ.get("CTRLB_HOME")
-    return (Path(home).expanduser().absolute() if home else home_path()) / "config.yaml"
+    return Path(home).expanduser().absolute() if home else home_path()
 
 
 def agents_dir() -> Path:
@@ -603,6 +612,7 @@ def validate(ctx: Context, plan: Plan | None) -> Settings:
     preflight says go, the service is stopped, the new tree goes in, and the restart fails on a file we
     just certified. Malformed NEW-shape config is not any step's business, so the check lives here.
     """
+    _refuse_unrecordable_agents(sorted(plan.agent_files) if plan else [])  # check AND apply: one site
     if plan is not None:
         stray = [p for p in plan.agent_files if p not in ctx.agents]
         if stray:
@@ -655,16 +665,107 @@ def _backup(src: Path, dest_dir: Path, stamp: str) -> Path:
     n = 2
     while True:
         try:
-            fd = os.open(dest, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-            break
+            _write_new_0600(dest, data)
+            return dest
         except FileExistsError:
             dest = dest_dir / f"{base}-{n}"
             n += 1
+
+
+def _write_new_0600(dest: Path, data: bytes) -> None:
+    """Create `dest` (it must NOT exist — `FileExistsError` otherwise) at 0600 and fsync it.
+
+    The one writer for files the migrator creates beside the config: the backups and the run record.
+    THROUGH an `O_CREAT|O_EXCL|O_WRONLY` fd opened at 0600, so secret-bearing bytes never land at the
+    process umask first, and `os.fsync` before close, so the bytes are on the platter before the next
+    write in the protocol depends on them."""
+    fd = os.open(dest, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     with os.fdopen(fd, "wb") as f:
         f.write(data)
         f.flush()
         os.fsync(f.fileno())
-    return dest
+
+
+# ── the run record (ISS-90 option C) ─────────────────────────────────────────────────────────────
+#: A write phase that rewrites agent files leaves `backups/<config backup name>.run` behind it from just
+#: before the first agent write until the config commit, which RENAMES it to `….run.committed`. A `.run`
+#: that is still there names a run that rewrote agent files and never committed — the one state no shape
+#: comparison can see (UPDATE_PLAN §3.4, ISS-114) — and lists the exact backup → live pairs to restore.
+#: `update.sh` reads it (README §Rollback step 2). A later commit renames every older open record to
+#: `….run.superseded`: the forward path is no longer blocked by it, while `update.sh` still offers its set
+#: for a rollback when it is the pre-state. Text, one `backup<TAB>live` line per file, paths relative to
+#: `$CTRLB_HOME` so a moved home still resolves; `stamp=<T>` first. The four states live in the NAME —
+#: `.run` (open) → `.run.committed` (this commit) | `.run.superseded` (a later commit) | `.run.resolved`
+#: (closed without a commit: `update.sh` when every file is back, or the operator's deliberate `mv`).
+RUN_SUFFIX = ".run"
+
+#: What `update.sh` refuses in a record path (README §Rollback step 2): bash's `[[:space:][:cntrl:]]`
+#: under `LC_ALL=C` (`record_pairs` pins it) — exactly U+0000–U+0020 and U+007F (C0, space, DEL) — and
+#: `..`. NOT Python's `\s`, which over-refuses NBSP/U+2007/U+202F; not a UTF-8 locale's class either,
+#: which would add C1 and a dozen Unicode spaces no Python class mirrors byte for byte. Refused BEFORE
+#: anything is written, in the shared preflight (`validate`), so `--check` and `--apply` refuse alike.
+_UNRECORDABLE = re.compile(r"[\x00-\x20\x7f]|\.\.")
+
+
+def _rel_home(path: Path) -> str:
+    """`path` relative to `$CTRLB_HOME`, POSIX-separated, LEXICALLY (no `resolve()`: a symlinked
+    `agents/` or home must still read `agents/<x>/agent.yaml`) — tried against `home_path()` (the base
+    of the agent and backup paths; it resolves `$CTRLB_HOME`) and then against `_unresolved_home()` (the
+    base of the config path, which must stay unresolved for the symlink refusal). A path under neither
+    stays absolute (a `CTRLB_CONFIG` elsewhere), which `update.sh` then refuses rather than guesses."""
+    for base in (home_path(), _unresolved_home()):
+        try:
+            return path.relative_to(base).as_posix()
+        except ValueError:
+            continue
+    return str(path)
+
+
+def _refuse_unrecordable_agents(agent_paths: Sequence[Path]) -> None:
+    """Refuse, before any write, an agent folder whose name the run record cannot carry."""
+    for p in agent_paths:
+        if _UNRECORDABLE.search(p.parent.name):
+            raise MigrationRefused(
+                f"agents/{p.parent.name!r}: the folder name holds whitespace, a control character or "
+                f"'..', which a run record cannot carry (nothing was written)",
+                remedy="rename the agent folder to a plain name (letters, digits, '-', '_') and re-run",
+            )
+
+
+def _all_restored(backups: Sequence[Path], lives: Sequence[Path]) -> bool:
+    """True when EVERY live file is byte-identical to its backup — `update.sh`'s own closed rule."""
+    return all(
+        live.exists() and filecmp.cmp(bak, live, shallow=False)
+        for bak, live in zip(backups, lives, strict=True)
+    )
+
+
+def _write_run_record(dest: Path, stamp: str, backups: Sequence[Path], lives: Sequence[Path]) -> Path:
+    """Write the open run record for one write phase (see above) and make its NAME durable before the
+    first agent write: a power loss must never keep an agent rewrite while losing the record."""
+    lines = [f"stamp={stamp}"]
+    for bak, live in zip(backups, lives, strict=True):
+        lines.append(f"{_rel_home(bak)}\t{_rel_home(live)}")
+    record = dest / (backups[0].name + RUN_SUFFIX)
+    _write_new_0600(record, ("\n".join(lines) + "\n").encode("utf-8"))
+    fsync_dir(dest)
+    return record
+
+
+def _close_run_record(record: Path) -> None:
+    """The commit mark: `….run` → `….run.committed`, ONE atomic rename (no new inode, no data block),
+    then supersede every OLDER open record — a later commit means the forward path has moved on."""
+    os.replace(record, record.with_name(record.name + ".committed"))
+    _supersede_open_records(record.parent)
+
+
+def _supersede_open_records(dest: Path) -> None:
+    """Rename every open `*.run` in `dest` to `*.run.superseded` (called after a commit)."""
+    if not dest.is_dir():
+        return
+    for old in sorted(dest.glob("*" + RUN_SUFFIX)):
+        os.replace(old, old.with_name(old.name + ".superseded"))
+    fsync_dir(dest)
 
 
 def _stamp(doc: Any) -> None:
@@ -998,8 +1099,10 @@ def apply(ctx: Context, steps: Sequence[Step] = STEPS) -> Applied:
     There is deliberately **no rollback for the agent-file writes**. They are idempotent and
     `config.yaml` is the commit point, so a crash between them leaves a state nobody can observe: the
     app refuses to boot on the still-legacy config, and re-running `--apply` re-derives the same plan
-    and converges. Restore logic would guard an unreachable state — and a restore path can itself
-    fail, which is a worse failure than the one it prevents. A failure *after* the commit is reported
+    and converges — not for derive-and-rename steps (step 5), ISS-114. Restore logic would guard an
+    unreachable state — and a restore path can itself fail, which is a worse failure than the one it
+    prevents. What the migrator DOES leave is a run record (`_write_run_record`): `update.sh` reads an
+    uncommitted one as "this run rewrote agent files and never committed" and prints the exact set. A failure *after* the commit is reported
     as its own state, naming the backup to restore.
     """
     _refuse_downgrade(read_marker(ctx.config))  # marker → environment → plan; see `check()`
@@ -1022,11 +1125,29 @@ def apply(ctx: Context, steps: Sequence[Step] = STEPS) -> Applied:
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     dest = backups_dir()
     backups = [_backup(ctx.config_path, dest, stamp)]
-    backups += [_backup(p, dest, stamp) for p in sorted(plan.agent_files) if p.exists()] if plan else []
-    if plan is not None:
-        for path, doc in sorted(plan.agent_files.items()):
-            _write_agent(ctx, path, doc)
-    _write_config(ctx, plan)  # ← THE COMMIT POINT
+    agent_paths = [p for p in sorted(plan.agent_files) if p.exists()] if plan else []
+    backups += [_backup(p, dest, stamp) for p in agent_paths]
+    # The run record exists only when a half-applied state is possible: agent files written before the
+    # commit. A config-only write is one atomic `os.replace` — it cannot half-apply.
+    lives = [ctx.config_path, *agent_paths]
+    record = _write_run_record(dest, stamp, backups, lives) if agent_paths else None
+    try:
+        if plan is not None:
+            for path, doc in sorted(plan.agent_files.items()):
+                _write_agent(ctx, path, doc)
+        _write_config(ctx, plan)  # ← THE COMMIT POINT
+    except BaseException:
+        # Every listed file still byte-identical to its backup (a refusal or a full disk before the first
+        # agent replace landed): nothing is half-applied, so no open record may claim it — the same rule
+        # `update.sh` closes a record by. Once any file differs, the record stays: that IS its state.
+        if record is not None and _all_restored(backups, lives):
+            record.unlink(missing_ok=True)
+            fsync_dir(dest)
+        raise
+    if record is not None:
+        _close_run_record(record)
+    else:
+        _supersede_open_records(dest)
     try:
         _assert_postcondition(steps, plan)
     except MigrationRefused as exc:
@@ -1062,6 +1183,14 @@ def _print_status(status: Status, *, applied: Applied | None = None) -> None:
             out.append(f"agent files:    {', '.join(status.agent_names)}")
         if applied is None:
             out.append(f"backups to:     {backups_dir()}")
+    elif applied is not None and applied.wrote and status.version < CONFIG_VERSION:
+        # No step applied, but the marker moved: "not needed" would read as "nothing changed", yet every
+        # runner-era build below CONFIG_VERSION now refuses this file (ISS-90 A-7). Say what happened —
+        # and only what is true: a pre-runner build has no check at all and loads it without reading it.
+        out.append(
+            f"migration:      stamp only ({status.version} → {CONFIG_VERSION}) — runner-era builds below "
+            f"{CONFIG_VERSION} refuse this file; pre-runner builds (no config_migration) read it blind"
+        )
     else:
         out.append("migration:      not needed")
     if applied is not None:

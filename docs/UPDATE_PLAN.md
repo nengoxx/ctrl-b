@@ -35,8 +35,9 @@
 | G5 | legacy knowledge in one deletable place | `app/config_migration/`; `config.py` never imports it |
 
 **Non-goals** — no down-migration · no migration framework · no discovery/decorators · **no
-post-migration repair hooks, ever** · no backup pruning · no cutover trap · no multi-file rollback
-(§3.4 explains why the last two are unnecessary rather than merely cut).
+post-migration repair hooks, ever** · no backup pruning · no cutover trap (§3.4 explains why it is
+unnecessary rather than merely cut) · no rollback machinery (the printed restore names every file of the
+run — `update.sh`'s report, §18; amended 2026-10-22 from "no multi-file rollback", owner's word).
 
 ---
 
@@ -139,7 +140,9 @@ files. This is what actually enforces G1; failing it is a hard error.
 **Why there is no rollback for step 4.** Agent rewrites are idempotent and config.yaml is the commit
 point, so a partial rewrite leaves a state **nobody can observe**: the app cannot boot on the
 still-legacy config (the check refuses), and re-running `--apply` re-derives the same plan and
-converges. Restore logic would guard an unreachable state — and a restore path can itself fail, which
+converges. ⚠ Not true for derive-and-rename steps (step 5: the persona library derived from `user_name` is
+lost on a re-run after a partial write) — ISS-114; until it is fixed, `update.sh`'s report says restore,
+never re-run. Restore logic would guard an unreachable state — and a restore path can itself fail, which
 is a worse failure than the one it prevents.
 
 **Post-commit assertion failure** is reported as its own state: `committed, but verification failed —
@@ -270,13 +273,16 @@ makes obsolete, so we do not build it to delete it.
 8. on failure: print the exact go-back command AND whether prod is currently STOPPED. No auto-revert.
 ```
 
-> **As built (verified 2026-10-14, `deploy/linux/update.sh`):** step 4 fails closed (above); step 8 reports the
-> OBSERVED unit state, never inferred from `is-active` (§17.3), and compares the on-disk marker before/after — but
-> **its after-read is broken ([ISS-90](./ISSUES.md), open):** the failure branch parses
-> `${now_line#config_version:}` WITHOUT `marker_value`, so the migrator's end-of-line comment makes every stamped
-> config read as version 0 and the report says "the config was NOT migrated … the tag revert alone is
-> sufficient" even after a run that migrated it. The precheck (step 5) uses `marker_value` correctly. The
-> runbook's §Rollback step 2 carries the caution until the one-token fix lands.
+> **As built (2026-10-22, after [ISS-90](./ISSUES.md) — the full record is §18):** step 4 fails closed (above)
+> and looks the gate up per tag (`gh run list --branch <tag>`); step 5 reads the marker through the ONE reader
+> (`config_shape`) and the tag's VERSION through the ONE VERSION reader (`build_version`), and its refusal
+> prints the exact restore — the whole backup set of one stamp — then "re-run this same command"; step 6 (`$from`)
+> is fixed BEFORE the checkout, from the git reflog on a retry, and a tree already at the tag that is serving
+> it exits 0 ("nothing to update"); step 8 reports the OBSERVED unit state, never inferred from `is-active`
+> (§17.3), and decides every rollback line with ONE predicate — can `$from` read the config NOW, or did this
+> run back up agent files. (Until 2026-10-22 the failure branch's after-read parsed the marker without
+> `marker_value`, so every stamped config read as shape 0 and the report said "the config was NOT migrated …
+> the tag revert alone is sufficient" even after a run that migrated it.)
 
 Rollback is the same command (`update.sh v1.2.1`), which is why step 5 exists.
 
@@ -1032,8 +1038,9 @@ the operator when something fails.
   go-back command, and — because it snapshots `backups/` before the run — if the config was migrated it
   names **the exact backup file** to restore rather than describing one. *(Superseded, verified 2026-10-14: §17.3
   replaced the `is-active` inference with the observed state and the backup check with a before/after marker
-  compare; the shipped report prints a generic `ls -t` listing, not one named file; and the marker compare's
-  after-read is broken — [ISS-90](./ISSUES.md), see the §5 as-built note.)* No automatic revert: rolling
+  compare; the report then printed a generic `ls -t` listing, not one named file, and the marker compare's
+  after-read was broken — [ISS-90](./ISSUES.md). Since 2026-10-22 the report names the whole backup set of one
+  stamp, decided by one predicate — §18.)* No automatic revert: rolling
   back is a decision, and doing it silently would hide which of those two states you are in.
 
 **The runbook rewrite — the release-blocking half.** `deploy/linux/README.md` §Rollback → CONFIG
@@ -1245,3 +1252,320 @@ cosmetic note: v1.2.1's success banner prints `curl -s localhost:5433/api/health
 rehearsal points at the *real* prod instance; and `/api/health`'s `server.port` reports the **configured**
 port (5433), not the port actually bound, so an operator verifying a hand-started instance by that field
 alone would be looking at the wrong number.
+
+---
+
+## 18. ISS-90 — the rollback report redesign (as-built, 2026-10-22)
+
+**Why.** `update.sh`'s failure report read the config marker at a third, hand-copied site without
+`marker_value`, so every marker the migrator writes (it carries an end-of-line comment) read as shape 0 and
+the report advised "the config was NOT migrated … the tag revert alone is sufficient" after a run that DID
+migrate ([ISS-90](./ISSUES.md); `f1b267df` wrote the success-path read, `4b3a54d7` the failure-path one,
+`0f87652b` fixed the two it knew of). The audit and a three-round council (audit → blind proposals → an
+adversary ×3; council record: session 82, 2026-10-22 — this section is the durable record) found the neighbours: the two reports asked
+different questions (A-2); "zero providers" is true only for pre-runner tags — every runner-era tag refuses a
+newer stamp (exit 78) at its installer's preflight and at boot (A-3); the restore put back the config but not
+the agent files the same run rewrote (A-4); "the newest backup" picked hand copies and stale files (A-5); a
+retry lost `$from` (G1); a failure between the agent writes and the config commit read as "revert alone" (G2);
+the fixed script only runs from the NEXT release (G3); bash and the migrator disagreed on odd marker spellings
+(G4). Design v3.1, owner-ruled 2026-10-22 ("v3 in full": fail closed on the recovery path).
+
+### 18.1 One reader per fact (`deploy/linux/update.sh`)
+- **`config_shape <file>`** — the ONLY `config_version` read. Absent file, or no line naming the key at
+  column 0 → 0 (the migrator's own meaning). A STRICT pattern accepts exactly the marker the migrator writes
+  (`^config_version:[ ]+(0|[1-9][0-9]{0,8})([ ]+#.*)?[ ]*\r?$`, `LC_ALL=C`: literal SPACES only — the
+  migrator refuses `config_version:5` (not a mapping) and a TAB after the colon or before the `#` (the YAML
+  scanner rejects it), and a final `\r` (CRLF, which the migrator preserves) is tolerated); a
+  LOOSE pattern (`^(BOM)?["']?config_version["']?[[:space:]]*:`) catches a line that names the key but is
+  not that marker → **FAIL** (rc 1, prints nothing). So `5#c`, `05`, `+5`, `:5`, a TAB, a BOM, quotes, a space
+  before the colon all fail closed; `Config_Version`, indented/nested keys, comments, `config_version_old`, flow style
+  read 0. An existing but unreadable file FAILS (it exists: "absent → 0" would be a guess). `marker_value`
+  (its only caller) cuts the `#` tail and drops `\r`; `parse_version` is unchanged.
+- **`build_version <repo> <rev>`** — the ONLY `config_migration/VERSION` read, an rc ladder: 0 the number ·
+  **2** `cat-file -e rev^{commit}` fails, or `ls-tree` exits non-zero (a missing tree offline is never "the
+  file is absent") · **3** `ls-tree` succeeds with empty output = a pre-runner tree (shape 0) · **4** the tree
+  lists the file but `git show` fails = the blob is not local in prod's `--filter=blob:none` clone (never
+  "pre-runner") · **1** not a plain integer. For `$tag`: 2 and 4 refuse (exit 1, naming the `git fetch`), 3 =
+  pre-runner (step 6's manual sequence), 1 = exit 78. For `$from`: 3 = pre-runner wording, 1 = treated as 0
+  (restore advised), 2/4 = unknown.
+- **`backup_stamps <home>`** — the migration's backup sets, oldest first, each stamp once: regular files named
+  EXACTLY `config.yaml.<YYYYmmddTHHMMSSZ>` or `config.yaml.<stamp>-<N>` (`_backup`'s naming: on a same-second
+  collision it appends `-N` to each FILE that already exists), so `.manual`, `manual-…`, `.pre-v…`, a
+  directory or a dangling link never qualify (a non-file would read as shape 0 and win any max); fixed-width
+  UTC, so name order = time order (no `ls -t`). **`latest_backup` / `config_backup <home> <stamp>`** resolve a
+  set's file to its HIGHEST suffix (the latest apply of that second), per file; **`agent_backups <home>
+  <stamp>`** lists `<agent>--agent.yaml.<stamp>[-N]`, the highest suffix per agent. Residual: two applies in one
+  second that back up DIFFERENT agents merge into one name-grouped set (a run record lists its exact names).
+  **`records` / `record_pairs` / `record_state` / `open_run` / `superseded_for`** read the migrator's run
+  records (§18.3). **`q`** shell-quotes (`printf %q`)
+  every path in a command the script PRINTS for a human to paste (a space in `$HOME` must not split a `cp`).
+
+### 18.2 `$from`, fixed before the checkout
+`head_tag = git describe --tags --exact-match`. **Not the target** → `from = head_tag` (else the short sha).
+**At the target** → if the unit is `active` AND `/api/health` says `ok` at `${tag#v}` AND its `pid` equals the
+unit's `MainPID` (a stale process answering after install.sh's identity gate failed must not pass) → "✓ already
+at $tag and serving it — nothing to update", exit 0. Otherwise it is a RETRY: `from` = the newest reflog hop
+`checkout: moving from X to …` whose `X^{commit}` ≠ `$tag^{commit}`, named by its tag when one points at it,
+(`reflog_from`). The banner claims neither cause: "-- retrying
+$tag (the tree is already at $tag but the service is not serving it — a previous run of this update did not
+finish, or the service is down; you came from $from per the git reflog — if $from itself never finished
+deploying, go back further: README §Rollback step 2)"; the failure report's tree line reads "tree: at $tag (not
+moved by this run; the reflog's previous version: $from)". No such hop (fresh clone, expired
+reflog) → `from` unknown: both reports say "the version you came from is unknown (no reflog entry) — README
+§Rollback step 2" and never a self-referential "revert to $tag". No state file. `from_ver = build_version
+$from`, computed once.
+
+### 18.3 The predicate — ONE question, computed once at the top of step 8 (wave 4: the run record)
+**The run record (owner-ruled 2026-10-22, option C).** The migrator's `apply`, when its plan rewrites agent
+files, writes `backups/<config backup name>.run` (0600, fsync'd through `_write_new_0600`, the writer factored
+out of `_backup`; the directory fsync'd with `core/fsutil.fsync_dir`) right after the backups and before the
+first agent write: `stamp=<T>`, then one `backup<TAB>live` line per file, paths relative to `$CTRLB_HOME`.
+Right after `_write_config`'s `os.replace` (before `_assert_postcondition`, a post-commit state) ONE atomic
+rename makes it `….run.committed`; that commit also renames every OLDER open `*.run` to `….run.superseded`
+(a commit without a record — a config-only plan — supersedes too). If the write phase fails while EVERY listed
+file is still byte-identical to its backup (`filecmp`, the reader's own rule), the record is removed — nothing
+is half-applied. A config-only plan writes none: one `os.replace` cannot half-apply. Before any write the
+migrator refuses an agent folder name holding whitespace, a control character or `..` (the reader's rule), so
+it never records a run the reader would call broken; the record's paths are LEXICAL relative paths (against
+`home_path()`, then the unresolved `$CTRLB_HOME` the config path is built on — a symlinked home or `agents/`
+still reads `agents/<x>/agent.yaml`).
+**The state machine is the record's NAME — one rename each, never a sibling file:**
+`.run → .run.committed (the migrator, at its commit) | .run.superseded (the migrator, a later commit) |
+.run.resolved (closed without a commit)`, and `.run.superseded → .run.resolved` once its set is back (wave 6:
+an offered superseded set, once restored, must never be offered again — a later edit would be lost to it).
+**`update.sh`** reads each `.run`, oldest first: `broken` (not exactly what the migrator writes — `stamp=`
+first and equal to its own name; the FIRST pair `backups/config.yaml.<T>[-N]` → `config.yaml`; every other
+pair `backups/<x>--agent.yaml.<T>[-N]` → `agents/<x>/agent.yaml` with the SAME `<x>`; every pair of the
+record's own `<T>`; no `..`, whitespace or control character; at least one agent pair — or a listed backup
+missing): never closed, never turned into a `cp`, the stop line · `committed` (the LIVE config's shape is
+above the record's config backup: a crash between the config's `os.replace` and the rename — the commit is
+proven by the shape) → renamed `.run.committed` · `restored` (every listed live file byte-identical to its
+backup) → renamed `.run.resolved` — the closure is made DURABLE at once, so a later edit to a listed file
+can never reopen it (wave 5: the reviewers' HIGH — a closure left implicit in file contents did reopen, and
+then every later update refused) · else `open`: the OLDEST open record is the pre-state (no commit in
+between). Renames happen under the deploy lock. The printed restore of an open record ends with ONE guarded
+line, `cmp -s <b1> <l1> && … && mv <record> <record>.resolved`, so a restore followed by a rollback through an
+OLDER updater (which knows no records) still closes it; the operator's deliberate fix-forward is the same
+`mv` (README §Rollback step 2).
+`cur_ver = config_shape $cfg` (empty on FAIL).
+`restore` = **yes** if a run is open (even when `$from` is unknown: its set is the pre-state) · else
+**unknown** if `cur_ver` or `from_ver` is empty · **yes** if `cur_ver > from_ver` · else **no**. Step 5
+refuses (78) on an open run with its set and "then re-run this same command" — on any tag, so `update.sh
+v(prev)` after a half-applied run (E21) and a manual checkout away and back between attempts (E22) are both
+caught.
+**WHY a record, after two other rules failed (record):** a TIME window (backups since the run started, or on
+a retry since the reflog's checkout into the tag) is defeated by a manual `git checkout` away and back
+between attempts (the adversary reproduced it) and mislabels an old successful update as a failed attempt; a
+STATE rule (an agent-bearing set whose config shape equals the current one and whose agent backup differs
+from the live file) also matches a COMMITTED same-shape migration (a step that applies to side files only —
+reproduced with the real migrator) and any agent edit after a correct restore, and as a step-5 refusal it
+would block every later update. Only the migrator knows whether it committed; the record is its word.
+**Failure report:** `no` → "config: shape N, which $from reads (M or below) — the tag revert alone is enough"
++ the revert line. `yes` + an open run → "⚠ a migration started at <T> rewrote N file(s) and never committed —
+put its whole set back before anything else (a re-run does NOT repair this — ISS-114)" + the record's set —
+never "re-run, it converges" ([ISS-114](./ISSUES.md)). `yes` + `cur_ver > from_ver` → "shape N now (it was D
+when this run started); $from reads M or below", then for a runner-era `$from` "A tag revert ALONE fails:
+$from's installer refuses this config at its preflight (exit 78) and prod stays as it is", for a pre-runner
+`$from` the zero-providers wording. `unknown` → the marker cannot be read ("Do NOT revert the tag alone; … if it
+is above M go back in this order") or `$from`'s shape is unknown (the reason + README §Rollback step 2; no
+revert line). Every failure report with a known `$from` also prints "(if $from itself never finished
+deploying, go back further: README §Rollback step 2)". Every restore block is followed by `git checkout $from
+&& install.sh prod` and the health curl — or, when `$from` is unknown, by "the release to go back to is unknown
+here — README §Rollback step 2".
+**Success hint**, same predicate: `no` → "roll back with: bash … update.sh $from"; `yes` with `cur_ver >
+from_ver` → "NOT a one-liner … 'update.sh $from' will refuse and print the exact restore first; the backup set
+it will name: <restore_stamp>"; `yes` from an open run → "'update.sh <tag>' refuses until its set is back";
+`unknown` → README §Rollback step 2.
+
+### 18.4 The restore block — `print_config_restore <home> <max> [<record>] [<run_start>]`, the one printer
+ONE resolver decides the set to offer when no open record is given — `offer_set` (the shape pick, or the
+superseded record behind it) — and the success hint names exactly what it returns, so the hint and the later
+`update.sh $from` never disagree. `<run_start>` is an argument (no dynamic scope).
+An empty `<home>` or `<max>` prints "✗ update.sh bug …" and FAILS (never a silent default). With `<record>` (an
+open run) it prints the record's exact pairs — per-file collision suffixes included — labelled "the set of a
+migration that rewrote agent files and never committed (started <date> UTC)"; a malformed record or a listed
+backup that is missing → "✗ …" and FAIL, never a `cp`;
+without, **`restore_stamp`** picks the NEWEST backup set whose own config shape is ≤ `<max>` (an unreadable
+backup is never offered) and labels it "taken earlier — <date> UTC, shape N: the right one if you are retrying
+a failed attempt of this same update, or undoing the update that took it; otherwise check README §Rollback
+step 2" ("taken during this run" when its stamp is at or after this run's start — a LABEL only, never a
+decision). When a SUPERSEDED record holds the real pre-state behind that set (`superseded_for`: the OLDEST
+`.run.superseded` stamped at or before it whose config backup is byte-identical to the set's — later applies
+started from its half state, each backing up the same untouched config but only the agent files still to
+rewrite, so the FIRST record holds every original; E27, two agents), that record's pairs are printed
+instead, labelled "taken <date> UTC by a migration that rewrote agent files and
+never committed (a later run committed over it — ISS-114)" (E18). Every set prints `cp -p` (paths shell-quoted) for `config.yaml` and for each `<agent>--agent.yaml.<stamp>` →
+`agents/<agent>/agent.yaml`, one per line (no `&&`), with "Config + N agent file(s) — all of them, never the
+config alone" or, for N = 0, "Config only — if the run that took it also rewrote agent files, their backups are
+missing: README §Rollback step 2"; then "(cp -p keeps 0600. This discards any config or agent edit made after
+<stamp>.)" and the `grep` check "must show <max> or less". A set whose shape is above `<max>` (or unreadable)
+gets a ⚠ line. Nothing qualifies → "✗ no backup … Do not improvise: README §Rollback step 2", no `cp`, and the
+printer FAILS: every caller then prints, instead of its continuation (the checkout of `$from`, or the step-5
+"re-run this same command"), the one line `restore_unresolved` owns — "stop here: resolve the backup first
+(README §Rollback step 2) — do not check out <rev> until the config it reads is in place".
+Contexts: the step-5 refusal (max = the tag's VERSION; then "4. bash … update.sh $tag" = re-run this same
+command), the unstamped-`providers:` refusal (max 0), the failure report (max = `from_ver`). The pre-runner
+refusal (step 6) prints NO restore: step 5 just proved the config is at a shape that tag reads (A-5).
+
+### 18.5 Riders
+`gh run list --branch "$tag"` (an old tag's run left the unfiltered 30-run window, so `update.sh v(prev)` — the
+rollback entry point — refused at the CI gate, N-1) · the unstamped-`providers:` check uses `disk_ver -eq 0`
+instead of a second marker read (an explicit `config_version: 0` + `providers:` is now refused too) and quotes
+`'providers:'` (A-6: backticks ran it as a command) · `install.sh`'s preflight abort says "this run has not
+touched the $ROLE service" (it was "the running service is untouched", false after a failed post-cutover run) ·
+the migrator's `_print_status` says `migration: stamp only (N → M) — runner-era builds below M refuse this
+file; pre-runner builds (no config_migration) read it blind` when it wrote, no step applied and the marker moved (A-7) · DECISIONS' expand/contract entry
+scoped to the DB (A-8) · README §Rollback step 2 is the manual method the `unknown` branch points at.
+
+### 18.6 Deviations from design v3.1, as built
+- `this_run_stamp` also excludes stamps that existed BEFORE `install.sh` ran. v3.1 accepted a same-second
+  false positive as LOW; the e2e retry case (E8) hit it — two runs in one second made the first run's set
+  "this run's" and printed the partial-write text. `_backup` never reuses a name (`O_EXCL`, `-2` suffix), so
+  the exclusion hides nothing the run wrote.
+- `config_shape` FAILS on an existing but unreadable file (v3.1: read as 0, a dead path the adversary noted).
+- The explicit-stamp set prints its shape too, with a ⚠ line when it is above `<max>`; the "taken earlier" label
+  adds "or undoing the update that took it" (the same printer serves the step-5 refusal, where "retrying" alone
+  does not fit); the N = 0 line says "the run that took it" (it serves both labels).
+- A `yes` that comes only from the agent clause while `$from` reads the current shape gets its own neutral
+  wording (the runner-era "a tag revert ALONE fails" would be false there).
+- `$from`'s VERSION unreadable (rc 2/4) prints one "!" line before the checkout and reports `unknown`.
+- **Fix wave 1 (2026-10-22):** the printer FAILS on its ✗ path and every caller prints `restore_unresolved`'s
+  stop line instead of its continuation; `UPDATE_PLAN` §3.4 carries the ISS-114 caveat.
+- **Fix wave 2 (2026-10-22, the blind review):** the retry window (`update_start` from the reflog, the
+  earliest set, the "attempt at" label — a retry that failed BEFORE migrating after a half-written first
+  attempt said "revert alone"; E12) · the neutral retry banner and tree line · `:5` fails closed · regular-file
+  backups only · printed paths quoted · `print_config_restore` refuses an empty `<max>` · the A-7 line scoped to
+  runner-era builds. The partial-write test compares `cur_ver` with the SET's shape (`set_ver`), not with this
+  run's start shape: on a retry after a committed first attempt they differ, and only `set_ver` is right.
+
+- **Wave 6 (2026-10-22, the reviewers' wave-5 round; main-seat rulings):** the closure extends to SUPERSEDED
+  records — the restore of a superseded set ends with the same guarded `mv` (to `….run.resolved`), and
+  `open_run` renames a superseded record whose set is back `.run.resolved` (never `committed`; a broken one is
+  skipped) · the agent-folder refusal moves into the SHARED preflight (`validate`, one call site), so `--check`
+  refuses exactly like `--apply` · its character class equals bash's `[[:space:][:cntrl:]]` under `LC_ALL=C`,
+  which `record_pairs` pins (`[\x00-\x20\x7f]` or `..` — not Python's `\s`, which over-refuses NBSP, and
+  not a UTF-8 locale's class, which adds C1 and a dozen Unicode spaces; the Opus confirm round 4 measured
+  both against bash — the two rules are now identical in every locale).
+- **Wave 5 (2026-10-22, the reviewers' wave-4 round; main-seat rulings):** closure is a NAME state
+  (`.run.resolved` by rename — `update.sh` when every file is back, the printed guarded `mv`, or the operator)
+  · a shape-proven commit renames `.run.committed` · `superseded_for` picks the OLDEST · the except path uses
+  the exact `filecmp` rule (the `written` counter is gone) · `_rel_home` is lexical against two bases ·
+  hostile agent folder names refused before any write · `record_pairs` validates the PAIR · one resolver
+  (`offer_set`) for the report and the hint · `marker_value`'s dead `\r` strip deleted (`parse_version`
+  strips it) · residuals documented. **Found while building:** `home_path()` RESOLVES `$CTRLB_HOME` while the
+  config path is deliberately unresolved (the symlink refusal) — so a purely lexical `_rel_home` needs both
+  bases (`_unresolved_home()` factored from `_unresolved_config_path`), fixed at the source of each path.
+- **Wave 4 (2026-10-22, option C, owner-ruled; both reviewers' confirm-round amendments):** the run record
+  (§18.3) replaces wave 2's time window — `update_start`, the excluded-before-the-run stamps, the "attempt at"
+  label and the reflog hop's time are DELETED (`reflog_from` stays for `$from`); step 5 refuses on an open run;
+  superseded records still serve a rollback (`superseded_for`); a failed config-backup lookup is never read as
+  shape 0 (`restore_stamp` skips it); E21/E22 un-xfailed. **Deviation from amendment 3, recorded:** the
+  migrator supersedes on EVERY commit (with or without its own record), and the READER keeps offering a
+  superseded record's set for a rollback (the adversary's confirm round N3) — otherwise E18's set would be the
+  config-only re-apply backup and the restore would leave the agent file in the new shape.
+- **Fix wave 3 (2026-10-22, the adversary):** `-N` collision names everywhere (per-file highest suffix; the
+  "before this run" list by FILE) · literal spaces in the marker pattern · the chain hedge "(if $from itself
+  never finished deploying, go back further: README §Rollback step 2)" on EVERY failure report, normal runs
+  included · the `apply` docstring's convergence caveat · E13–E20 and two strict xfails. The predicate keeps
+  wave 2's time window (the state rule was withdrawn — §18.7).
+
+### 18.7 Residuals (accepted, LOW unless noted)
+Duplicate `config_version:` lines (bash takes the first strict one; the migrator refuses the file) · flow-style
+`{config_version: 5}` reads 0 · after a CHAIN of failed updates the reflog names the last failed target, not
+the last version that served (the retry banner says so) · a branch name in the reflog resolves to the branch's
+current commit (prod never moves a local branch) · a clock stepped backwards mid-run only mislabels a set
+("taken earlier" vs "during this run") · two applies in one UTC second that back up DIFFERENT agents merge into one set
+(the `-N` names are otherwise handled — an earlier version of this list said they "fail toward ✗ no backup";
+the adversary reproduced the opposite, a fail-OPEN "revert alone", fixed in wave 3, E19; for a run that
+rewrote agent files the record lists the exact per-file names, so the merge cannot happen there) ·
+a half-applied run (agent files rewritten, the config commit not reached) left by a migrator from BEFORE the
+run records (every backup on prod today) cannot be detected — none can exist on prod (no pending step touches
+agent files), and from the first record-writing release on, the migrator that runs is always the TARGET tag's
+(G3), so every later migration writes records · without a directory fsync on Windows (the allowlisted no-op)
+a power loss can keep an agent rewrite and lose the record's name · an EMPTY or truncated record (a crash
+between its creation and its fsync) is `broken` and blocks until the operator's `mv … .resolved` · TWO
+migrators at once (a manual `--apply` during an update) are outside the contract: the second supersedes the
+first's record, and the first's `_close_run_record` then raises after its commit — reported as a post-commit
+failure (the config IS committed; no code) · a config edited between two partials matches no superseded
+record's config backup → the config-only shape pick is offered · a superseded record older than an unrelated
+later set with byte-identical config is still preferred for that set (its agent pre-images may predate later
+agent edits — the "discards any edit made after <stamp>" line names its date) · two applies in the SAME second
+merge into one name-grouped set, which can include an agent backup of a resolved run (a record-driven set
+never merges) · **(MED-conditional, OP-3)** a config-only restore followed by a re-apply manufactures a
+newer config-only backup that a later rollback would pick — README's "never the config alone" rule; root fix =
+[ISS-114](./ISSUES.md) · a rollback of more than one release can need agent files only an intermediate run
+rewrote (outside the one-release window) · the fix protects the update AFTER the release that ships it (G3 —
+README §Release: the first VERSION-bumping release after v1.7.12 runs the updater with the bootstrap form) ·
+§3.4's "re-running `--apply` converges" is false for derive-and-rename steps ([ISS-114](./ISSUES.md); §3.4 now
+says so); the report says "restore, do not re-run" meanwhile.
+
+### 18.8 Tests (`backend/tests/test_update_sh.py`, was `test_update_sh_marker.py`)
+**Unit** (the REAL functions extracted, under `set -euo pipefail`): `config_shape` on the real writer's stamp
+(fresh and re-stamped 4 → 5) and the full spelling table (35 rows incl. absent/zero/CRLF/BOM/no-space/TABs) plus
+absent/unreadable files · `build_version` rc 0/1/2/3 in a plain repo, rc 4 in a real `--filter=blob:none` clone
+with the origin unreachable, rc 2 from an unlistable tree (`--filter=tree:0`, commit present) ·
+`restore_stamp` against the real migrator's backup set plus decoys (`.manual`, `manual-…`, `.pre-v…`, `-2`,
+newer shape 9, malformed) · the run records (`records` order by stamp then numeric suffix, `-10` after
+`-2`; the printed guarded `mv` does nothing until every file is back, then renames `.run.resolved`, and a
+later edit does not reopen it; `open_run` renames a restored record `.resolved` and a shape-proven commit
+`.committed` itself; ten hostile record lines → `broken`, never a `cp` (incl. the mismatched pair `maya →
+config.yaml`, another agent's file, another run's stamp, a `..` agent name only the `..` rule catches); a
+record with no agent pair → `broken`; the OLDEST of two open records is named; a listed backup missing → the
+stop line) · a CRLF marker parses (pins `parse_version`'s `\r` strip) · mutants (wave 5, run in scratch, each
+killed by the named test): no `..` rule → the `..--agent` hostile row; `n ≥ 1` → the no-agent-pair test;
+newest open → the oldest-open test; `%d` order → the suffix-order test; newest superseded → E27 ·
+`backup_stamps` skipping a directory · `print_config_restore` (whole set incl. an agent name containing `--`,
+no `&&`, both labels, ✗ with no `cp` and rc 1, the N = 0 wording, a space in the home path — the printed lines
+EXECUTED — and an empty `<max>` refused).
+**Migrator:** the A-7 line on a stamp-only apply, no restore wording, "not needed" on the re-run · the run
+record: present with its exact lines at 0600 and no `.committed` when the config write fails after an agent
+write · kept after ONE agent write when the second fails · refused before any write for an agent folder named
+`My Agent` · lexical lines under a symlinked home · renamed `.committed` on a normal apply · none for a plan
+without agent files · removed when the first
+agent write fails · superseded by the next commit · a same-second second apply writes its own `-2.run`.
+**Structural:** every non-comment, non-echo line naming `config_version` is inside `config_shape`/
+`marker_value`; every `git show|ls-tree|cat-file` is inside `build_version`; no `|| echo 0`; every
+`print_config_restore` call has ≥ 2 arguments and is guarded (`if …` or `||` — it returns 1); no backtick inside a double-quoted echo across
+`deploy/linux/*.sh` + `tools/*.sh`; `bash -n`.
+**End to end** — the REAL `update.sh` in a sandbox HOME (bare origin; annotated tags vOLD/vNEW with their own
+VERSION; prod a clone at vOLD; `systemctl`/`curl`/`gh` stubs FIRST on PATH, asserted with `shutil.which`; vNEW's
+stub `install.sh` runs the REAL migrator `--apply` via `sys.executable` with `CTRLB_HOME`/`CTRLB_CONFIG`
+explicit; a hand-built env, nothing inherited; skipped if the repo has a `.env`): **E1** a failed migrating run
+(the printed `cp` lines EXECUTED → config and agent byte-identical at 0600) · **E2** nothing migrated → revert
+alone · **E3** pre-runner `$from` → its wording + the shape-0 set · **E4** stamp-only from a VERSION-5 `$from`
+with a config-only backup present → revert alone · **E5** `update.sh vOLD` → exit 78 past three decoys, the
+lines executed, the re-run passes step 5 · **E6** success hints (migrated / not) · **E7** an unreadable marker →
+unknown, and after the ✗ only the stop line (no checkout) · **E5b** a rollback refusal with no backup to
+offer → exit 78, the stop line, no re-run step · **E8** a retry → the reflog `$from`, the earlier set restored · **E8b** already serving → exit 0, the
+installer never runs; a stale pid ≠ MainPID → still a retry · **E8c** expired reflog → unknown, no
+self-reference · **E9** the partial write (the real migrator with its config write failing after the agent
+write) → the whole-set text, no "converge", both files restored · **E10** the run's backup deleted → "taken
+earlier" · **E11** `--branch <tag>` in the `gh` argv (asserted on every run) · **E12** a half-written first
+attempt (record open), then a retry → refused at step 5 (78) with the record's set; executed, the record
+closes itself and the same command proceeds · **E13/E13b** `$from`'s VERSION blob not local / tree unreadable (a `git` shim first on PATH fails that
+one invocation) → unknown, never shape 0 · **E14** a malformed marker before the run → 78, the installer never
+runs · **E15** the TAG's blob not local → refused naming the fetch, never the pre-runner branch · **E16** reflog
+hops from the tag's own commit under another name are skipped · **E17** active + MainPID but another version
+→ a retry, not "nothing to update" · **E18** a half-written attempt, a by-hand re-apply over it (the record
+superseded), a retry → not refused, and the superseded record's set restores byte-for-byte · **E19** a same-second collision (`config.yaml.<T>-2`, the real migrator at a fixed clock) with a
+partial write → the `-2` set, never "revert alone" · **E20** the chain hedge on a normal failure · **E21**
+`update.sh vOLD` after a half-written run → 78 with the set, restored byte-for-byte · **E22** a manual checkout
+away and back → still refused (78) · **E23** a broken record → 78 + the stop line · **E24** the printed
+restore executed WITH its guarded close, then a checkout + a config edit → the next update proceeds · **E25**
+the restore WITHOUT the guarded line → the next run renames it `.resolved` itself and proceeds · **E26** an
+agent edit + the manual `mv` + a successful re-update → `update.sh vOLD` never offers that record's set
+(fixed, distinct clocks) · **E27** two agents, three applies (fail on zed · fail at the commit · commit) →
+`update.sh vOLD` restores BOTH originals from the OLDEST superseded record · **E28** a crash between the
+commit and the rename → the next run renames it `.committed` and proceeds · **E29** a half-write, a by-hand
+re-apply (superseded), `update.sh vOLD` offers that set (its guarded line ends `.run.resolved`), put back, the
+re-run proceeds and closes it, an agent edit, a successful `update.sh vNEW` → `update.sh vOLD` offers the NEW
+set (holding the edit), never the old one. Wave 6 also pins: the refusal in `--check` AND `--apply` (space,
+tab, a C0 control, DEL, `..`), NBSP · an ideographic space · C1 NEL recorded and read, a symlinked `agents/` dir, the first pair not
+`config.yaml`, a `stamp=` disagreeing with the name, the superseded closure unit — mutants (scratch, each
+killed by the named test): the first-pair check dropped → the first-pair test; `stamp=` matched by pattern →
+the stamp-line test; the superseded closure removed → its unit + E29; `_rel_home` with `resolve()` → the
+symlinked-`agents/` test; no `\x7f` → the DEL row; no `..` → the dotdot row. The adversary's mutation run (22 injected regressions, 7 survived)
+drove E13–E17; M22 (`marker_value`'s `\r` strip, redundant with `parse_version`) and M23 (`run_start` taken
+after install.sh — the stub installs in under a second) remain unpinned. A unit test also builds the collision
+with the real migrator in-process (fixed clock). Every e2e case fails when pointed at
+the pre-ISS-90 script (measured 2026-10-22 — several on the new wording alone; the audit's own harness reproduced the bug itself).

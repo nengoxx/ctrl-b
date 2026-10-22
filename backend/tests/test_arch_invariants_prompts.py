@@ -72,6 +72,8 @@ _ALLOWED: dict[str, tuple[tuple[str, str], ...]] = {
         ("app/config_migration/__init__.py", "_assert_unchanged"),
         ("app/config_migration/__init__.py", "_call_step"),
         ("app/config_migration/__init__.py", "_parse"),
+        ("app/config_migration/__init__.py", "_print_status"),
+        ("app/config_migration/__init__.py", "_refuse_unrecordable_agents"),
         ("app/config_migration/__init__.py", "_refuse_downgrade"),
         ("app/config_migration/__init__.py", "_refuse_empty_provider_models"),
         ("app/config_migration/__init__.py", "_refuse_retired_env"),

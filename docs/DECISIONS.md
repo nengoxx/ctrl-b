@@ -1750,8 +1750,11 @@ persistent dev/release branches are for multi-version-in-the-field products.
   **land the fix on main and verify** (`git merge-base --is-ancestor <fix-sha> main`) → remove the worktree.
   The verify step is non-optional — "fix shipped from the release line, forgotten on trunk" is the classic
   under-pressure regression.
-- **Expand/contract compatibility policy (DB AND config.yaml).** Rollback window = **1 release** (you only ever
-  roll back to the previous tag), so: old code must tolerate the schema/config written by the NEXT release →
+- **Expand/contract compatibility policy (DB schema; config.yaml rollback = restore the run's backups,
+  UPDATE_PLAN §6/§18 — the migrator refuses a newer stamp by design)** *(amended 2026-10-22, ISS-90 A-8: it
+  said "DB AND config.yaml", a tolerance the config migration does not provide)*. Rollback window =
+  **1 release** (you only ever roll back to the previous tag), so: old code must tolerate the schema written
+  by the NEXT release →
   every change ships **additive first** (new nullable column / new field with a default); a **destructive
   contraction** (drop/rename/repurpose) may land at the earliest **one release after** the code stopped using
   the old shape, and every deprecation carries a `DEPRECATED since vX, DROP in vY` note at the site.

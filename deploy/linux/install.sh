@@ -143,7 +143,7 @@ fi
 #      script had it — Fable.) `--check` writes nothing; it parses, plans, validates and probes writability.
 #      Exit 78 = unmigratable (no restart fixes it), 1 = environmental. Either way we stop here.
 echo "-- config preflight ($CTRLB_HOME/config.yaml)"
-migration --check || { echo "→ aborted before the frontend build and the cutover; the running $ROLE service is untouched."; exit 1; }
+migration --check || { echo "→ aborted before the frontend build and the cutover; this run has not touched the $ROLE service."; exit 1; }
 # `--check` exits 0 for "needed" as well as "not needed" (§3.5 locks that, so the `|| exit 1` above means
 # "would FAIL", not "would change something"). PROD therefore applies at the cutover, where the service is
 # verifiably stopped. DEV has no cutover — its units are on-demand — so it applies HERE: otherwise this

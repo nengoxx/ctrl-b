@@ -129,8 +129,8 @@ opens.
 - Open-terminal output is not masked for secrets ([ISS-98](../ISSUES.md)).
 
 **Settings and operations**
-- `update.sh` can report "config NOT migrated" after a run that did migrate; check the backups
-  before a tag-only rollback ([ISS-90](../ISSUES.md)).
+- After a failed update, `update.sh` names the exact backups to restore (config and agent files of
+  one stamp), or says it cannot and points at the runbook's §Rollback step 2.
 - `server.host` and `server.port` bind nothing ([ISS-91](../ISSUES.md)).
 - Startup-only settings save with no restart notice ([ISS-92](../ISSUES.md)).
 - The database backup cleanup also deletes your own `ctrlb-*.db.gz` copies ([ISS-93](../ISSUES.md)).
