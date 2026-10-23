@@ -61,6 +61,8 @@ from app.core.events import ThreadFrame, ThreadFrameState
 from app.core.fsutil import atomic_write_text, write_text_eol
 from app.core.media import StoreWriteError, role_dir
 from app.core.memory import StoreScope, StoreSpec, store_by_key
+from app.core.permissions import run_shell_gate
+from app.core.redact import redact_result
 from app.domain.agent import AgentDef
 from app.domain.automation import AutomationSnapshot
 from app.domain.conversation import Message, Thread, ToolCallPart, ToolResultPart
@@ -246,7 +248,8 @@ class ThreadPatch(BaseModel):
 class ExecRequest(BaseModel):
     """User `!<cmd>` escape hatch (Phase 5). Runs on the backend host; creates a thread on first use
     like `/agent/chat`. No privilege field — the user typing `!` *is* the authorization (the run is at
-    FULL), gated only by `shell.user_exec_enabled`."""
+    FULL), gated by the USER shell gate (`shell.enabled` + `shell.user_exec_enabled`) — checked up front
+    here (UX) and again at the `invoke` chokepoint (fail-closed)."""
 
     command: str = Field(min_length=1)
     thread_id: str | None = None
@@ -784,7 +787,7 @@ def _maybe_spawn_drain_b(state, thread: Thread, handle: TurnHandle, cfg) -> bool
 
 
 async def _run_steer_exec(state, thread: Thread, q, entry: SteerEntry) -> None:
-    """Run ONE queued `exec` steer during a drain-B body: re-check `shell.user_exec_enabled` LIVE
+    """Run ONE queued `exec` steer during a drain-B body: re-check the USER shell gate LIVE
     (fail-closed — disabling the shell mid-queue must drop, never run) then the SHARED `run_user_exec`
     (the same run_shell@FULL + atomic pair the `/exec` endpoint and Drain A use). Unlike Drain A there is
     no live stream to carry a `notice`, so a dropped command is logged at INFO.
@@ -796,8 +799,10 @@ async def _run_steer_exec(state, thread: Thread, q, entry: SteerEntry) -> None:
     run_shell. Claim-first also gives lost-on-crash over double-run — a Stop/harvest arriving
     mid-execution can no longer hand a still-queued, already-running command back to the composer. The
     trade (a crash between claim and run loses the command) is the in-memory queue's accepted failure."""
-    if not state.settings.shell.user_exec_enabled:
-        log.info("steer drain-B: shell disabled — dropped queued command (entry %s)", entry.entry_id)
+    if key := run_shell_gate(state.settings.shell, Actor.USER):
+        log.info(
+            "steer drain-B: shell disabled (%s) — dropped queued command (entry %s)", key, entry.entry_id
+        )
         q.commit([entry.entry_id])
         prune_if_empty(state.steer_queues, thread.id, q)
         return
@@ -1653,8 +1658,8 @@ async def exec_shell(body: ExecRequest, request: Request) -> dict[str, Any] | Re
     so it renders as a command bubble *and* feeds the agent's context on the next turn. The client
     re-reads the thread to render it (no parallel render path)."""
     settings = request.app.state.settings
-    if not settings.shell.user_exec_enabled:
-        raise HTTPException(status_code=403, detail="user shell exec is disabled (shell.user_exec_enabled)")
+    if key := run_shell_gate(settings.shell, Actor.USER):
+        raise HTTPException(status_code=403, detail=f"user shell exec is disabled ({key})")
 
     threads = request.app.state.threads
     thread = await _supplied_thread(threads, body.thread_id)
@@ -1667,7 +1672,7 @@ async def exec_shell(body: ExecRequest, request: Request) -> dict[str, Any] | Re
 
     # Reserve the thread's turn marker (D38). D41 (Slice 5): a `!cmd` to a thread already running a
     # chat/resume turn STEERS — enqueue the command (202) instead of the old 409, drained at the
-    # running turn's loop top / turn end (waves 2–3). The `user_exec_enabled` 403 above stays BEFORE
+    # running turn's loop top / turn end (waves 2–3). The shell-gate 403 above stays BEFORE
     # this reserve (fail-early UX); the drain-side re-check (fail-closed) is wave 2's. A sync holder
     # keeps the 409. The catch→append is synchronous-atomic (no `await`; D38 TOCTOU). Non-steer path:
     # released in the finally.
@@ -3395,6 +3400,9 @@ async def apply_proposal_endpoint(body: ApplyRequest, request: Request) -> dict[
         deps = request.app.state.deps
         agent = request.app.state.settings.resolve_agent(call_msg.agent)
         written = await apply_proposal(deps, agent, call_part.tool, dict(call_part.args))
+        # Outside `invoke`, so outside the egress funnel (`ActionService._record`): mask here, before the
+        # result is persisted, audited or returned (ISS-98 — the owner-approved text gets the same rule).
+        redact_result(written, request.app.state.settings.secret_values())
         if written.state is not RunState.OK:
             # Leave the proposal pending (it stays approvable/dismissable) and surface the failure.
             # C3-M2: a gate-denial / failed apply is auditable too — the owner clicked Approve and the

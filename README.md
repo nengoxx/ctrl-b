@@ -166,19 +166,22 @@ Full model: [`docs/SECURITY_MODEL.md`](./docs/SECURITY_MODEL.md). The short vers
   **Tailscale Serve** HTTPS (never Funnel — nothing public, by construction).
 - **Confirm gates, not auth.** Medium/high-risk actions suspend into an explicit confirm step
   (single-use, TTL'd tokens bound to the exact call) — a UX safety, deliberately not a security
-  boundary. `ui_exposed` decides what the UI lists, not what can be called: `POST /api/actions/{name}`
-  reaches every registered tool — the Tailscale Serve actions and `run_shell` included — behind that
-  confirm token ([ISS-88](./docs/ISSUES.md)).
+  boundary. The UI's action route calls only the tools the UI shows: `POST /api/actions/{name}`
+  answers 404 for a tool that is not `ui_exposed`, exactly as for an unknown name — `run_shell` and the
+  Tailscale Serve actions included (those have their own doors: `/api/exec` and Conf › Server › HTTPS access).
 - **Secrets never leave.** SSH passwords / API keys live in gitignored `config.yaml`/`.env`, are
-  masked on API read, redacted from the output of the commands ctrl-b runs (the local shell, the SSH
-  power and service commands — open-terminal's output is not passed through the redactor), and locked
-  by tests (`test_secret_hygiene.py`).
+  masked on API read, and are masked out of every tool result — open-terminal, MCP / OpenAPI and the web
+  tools included — at one chokepoint before the result is shown, stored or sent to a model (one known gap:
+  a session-search snippet whose match markers or window edge fall inside a secret, [ISS-118](./docs/ISSUES.md)); locked by
+  tests (`test_secret_hygiene.py`, `test_redact_iss98.py`). A secret shorter than `redact.min_len`
+  (default 8 characters) is not masked (an SSH action still masks its own machine's password; the server
+  log names short secrets at startup — rotate them).
 - **Shell is opt-in RCE.** The `!` composer escape hatch (`shell.user_exec_enabled`) and the agent's
-  `run_shell` (`shell.agent_exec_enabled`) are two independent off-by-default toggles. The agent toggle
-  governs agents at `confirm`/`auto_low`: off → `run_shell` is denied, on → every call asks first (`readonly`
-  is denied either way). An agent running at `full` (by its `agent.yaml`, or your per-device `/privilege full`) runs `run_shell`
-  with **no confirm whether the toggle is on or off** — the only off-switch at `full` is
-  `shell.enabled: false` ([ISS-87](./docs/ISSUES.md)).
+  `run_shell` (`shell.agent_exec_enabled`) are two independent off-by-default toggles, chosen by WHO is
+  calling, at every privilege. The agent toggle off → `run_shell` is denied, `full` included; on → every
+  call asks first at `confirm`/`auto_low`, and an agent running at `full` (by its `agent.yaml`, or your
+  per-device `/privilege full`) runs it **without asking** (`readonly` is denied either way).
+  `shell.enabled: false` refuses every `run_shell` and `!` before any confirm question.
 
 ## Quickstart
 
@@ -310,7 +313,7 @@ made with `cp` keeps its original mode until the first save.
 **One risk model everywhere.** Tools and integrations declare a `risk` of `low | med | high`, and an agent's
 `privilege` (`readonly | confirm | auto_low | full`) decides which calls ask first: `confirm` (the default)
 asks for every med/high call, `auto_low` runs med calls without asking and asks only for high, `full` runs
-everything without asking (including `run_shell` — see [Security model](#security-model)), and `readonly`
+everything without asking (including `run_shell` when `shell.agent_exec_enabled` is on — see [Security model](#security-model)), and `readonly`
 denies fleet actions above low risk (open-terminal's exec and write tools included at their default `high` risk; its reads run at their default `low` — all three are `open_terminal.*_risk` knobs) but still
 asks for MCP / OpenAPI tools and the agent's own med tools. A tool whose designer forced a confirm asks below `full` whatever its risk. Details:
 [Chat](docs/user-guide/chat.md).

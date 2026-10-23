@@ -27,6 +27,7 @@ from typing import TYPE_CHECKING, Protocol
 
 from pydantic import BaseModel, Field
 
+from app.core.redact import clip
 from app.core.tool import InvocationContext, action
 from app.domain.agent import AgentDef
 from app.domain.conversation import Thread
@@ -241,7 +242,7 @@ async def run_subagent(
         )
     except Exception as exc:  # noqa: BLE001 — a child failure must not crash the parent turn
         log.warning("subagent %s failed: %s", agent_def.name, exc)
-        return SubResult(index=index, agent=agent_def.name, state=RunState.ERROR, summary=str(exc)[:200])
+        return SubResult(index=index, agent=agent_def.name, state=RunState.ERROR, summary=clip(str(exc), 200))
 
     msgs = await messages.list(thread.id)
     text = next((m.text() for m in reversed(msgs) if m.role == "assistant" and m.text().strip()), "")
@@ -249,7 +250,7 @@ async def run_subagent(
         index=index,
         agent=agent_def.name,
         state=RunState.OK if text else RunState.ERROR,
-        summary=(text[:160] + "…") if len(text) > 160 else (text or "subagent produced no answer"),
+        summary=clip(text, 160) if text else "subagent produced no answer",
         output=text,
     )
 

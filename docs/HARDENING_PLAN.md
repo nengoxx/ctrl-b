@@ -684,7 +684,7 @@ rework; mtime-memo seam"), so this is a CONFIRM/EXTEND of SYS-8, not a new findi
 **Sequencing note for H1:** the media baseline must be taken **AFTER Phase 21 ships** — measuring a
 pre-library tree would set the expected-library-size envelope an order of magnitude too small ·
 **CM-1 (added 2026-08-17):** the core-memory secret gate is best-effort by construction —
-`_SECRET_MIN_CHARS = 8` floor means a real ≤7-char credential is outside the rail
+the `redact.min_len` floor (default 8; the one floor shared with the redactor since 2026-10-22, D87) means a real credential under it is outside the rail
 (CORE_MEMORY_PLAN §14b; joins Packet ③'s SECURITY_MODEL §5 re-walk) · ~~CM-2 (added
 2026-08-17): the default `index_char_limit` 8192 sits at 99% fill on a realistic 57-topic
 corpus~~ **→ CM-2 CLOSED 2026-08-19** by the owner sizing ruling: default cap raised to

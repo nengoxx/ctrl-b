@@ -58,7 +58,7 @@ import pytest
 import yaml
 from _async import run_async
 
-from app.config import load_settings
+from app.config import Settings, load_settings
 from app.services.agent import core_memory as cm
 from app.services.agent.core_memory import (
     CORE_MEMORY_TOOL,
@@ -1026,8 +1026,8 @@ def test_a_multi_line_secret_in_a_create_field_is_caught_before_rendering(tmp_pa
 
 
 def test_a_blank_secret_field_does_not_match_everything(tmp_path):
-    """`secret_values()` drops empty strings but not whitespace-only ones — a blank config field must
-    never make every write look like a leak."""
+    """`secret_values()` drops blank (whitespace-only) values, and every value under `redact.min_len` —
+    a blank config field must never make every write look like a leak."""
     corpus = _with_secret(tmp_path, "   ")
     _root()
     run_async(corpus.create("Ordinary", "nothing secret here", None, "a body with spaces"))
@@ -1037,7 +1037,8 @@ def test_a_blank_secret_field_does_not_match_everything(tmp_path):
 def test_a_short_secret_value_does_not_brick_the_write_path(tmp_path):
     """The first live drive (2026-08-17): 1-char placeholder API keys and a 4-char password are
     substrings of ordinary prose, so containment on them refused EVERY write against a realistic
-    corpus. Values under `_SECRET_MIN_CHARS` are skipped — unidentifiable as a leak by containment."""
+    corpus. Values under the floor `redact.min_len` are never collected — unidentifiable as a leak by
+    containment."""
     corpus = _with_secret(tmp_path, "emma")
     _root()
     run_async(corpus.create("Deploy note", "where prod lives", None, "emma runs the prod unit."))
@@ -1045,10 +1046,11 @@ def test_a_short_secret_value_does_not_brick_the_write_path(tmp_path):
 
 
 def test_the_secret_floor_boundary_is_exactly_min_chars(tmp_path):
-    """Pins `_SECRET_MIN_CHARS` semantics (Codex fix-wave LOW): 7 raw chars passes, 8 refuses, and
-    an 8-char value with edge whitespace refuses — the RAW length is measured, because the raw value
-    is what containment matches (stripping one side would open a threshold bypass)."""
-    assert cm._SECRET_MIN_CHARS == 8
+    """Pins the floor's semantics (Codex fix-wave LOW; the floor is `redact.min_len` since ISS-98, and
+    `Settings.secret_values()` applies it): 7 raw chars passes, 8 refuses, and an 8-char value with edge
+    whitespace refuses — the RAW length is measured, because the raw value is what containment matches
+    (stripping one side would open a threshold bypass)."""
+    assert Settings().redact.min_len == 8
     seven = _with_secret(tmp_path, "abcdefg")
     _root()
     run_async(seven.create("Seven", "d", None, "the value abcdefg sits in prose"))

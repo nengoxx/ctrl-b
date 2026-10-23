@@ -137,6 +137,8 @@ _ALLOWED: dict[str, tuple[tuple[str, str], ...]] = {
         ("app/services/voice_live.py", "LiveRelaySession._note_pre_roll_mismatch"),  # BUG-001 ③ log line
         ("app/services/agent/persona.py", "_warn_once_dangling"),  # D78: a dangling persona link
         ("app/services/agent/session.py", "AgentSession._log_context_cost"),
+        # ISS-98: the startup warning naming secrets below `redact.min_len`
+        ("app/main.py", "_warn_short_secrets"),
         ("app/services/agent/session.py", "AgentSession._run_calls._complete"),
         ("app/services/automations/schedule.py", "validate_cron"),
         ("app/services/automations/service.py", "AutomationAgentMissing.__init__"),

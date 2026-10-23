@@ -164,6 +164,19 @@ async def _memory_sweep(backup: GitMemoryBackup, settings) -> None:
             logger.exception("memory reconcile sweep failed")
 
 
+def _warn_short_secrets(settings: Settings) -> None:
+    """The redaction floor (ISS-98): a configured secret shorter than `redact.min_len` is never masked —
+    say which ones, once, by config PATH only (never a value). Read at boot; a Conf edit is not re-warned."""
+    if short := settings.short_secret_paths():
+        logger.warning(
+            "%d secret value(s) (or their bare credential after the auth scheme) are shorter than "
+            "redact.min_len=%d and are not masked: %s",
+            len(short),
+            settings.redact.min_len,
+            ", ".join(short),
+        )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     load_dotenv()  # .env → os.environ first, so CTRLB_CONFIG/CTRLB_DB are seen below
@@ -182,6 +195,7 @@ async def lifespan(app: FastAPI):
     # Set BOTH ways rather than only on: a one-directional flip would leave the level wherever the
     # last boot in this process put it, which in a test run is another test's config.
     logging.getLogger("app").setLevel(logging.DEBUG if app.state.settings.server.debug else logging.INFO)
+    _warn_short_secrets(app.state.settings)
     app.state.fleet = FleetService(app.state.settings)
     app.state.services = ServiceService(app.state.settings, app.state.fleet)
     app.state.db = Database()

@@ -26,7 +26,7 @@ import json
 import logging
 import os
 import re
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from datetime import datetime
 from pathlib import Path
 from typing import Any, ClassVar, Literal, Protocol, TypeGuard
@@ -98,6 +98,9 @@ _SECRET_MAP_KEYS = frozenset({"env", "headers"})
 #: purpose: inside a credential map, under-masking a token is the real risk while a wrongly-masked
 #: value is merely cosmetic (a string shown as ••••; `unmask` restores it).
 _MAP_SECRET_HINTS = ("password", "secret", "token", "key", "auth", "bearer", "credential", "cookie")
+#: An auth-scheme credential (`Authorization: Bearer <token>`): the bare `<token>` is a secret of its
+#: own — an error or an echo may carry it without the scheme word (ISS-98).
+_AUTH_SCHEME_VALUE = re.compile(r"^(?i:bearer|basic|token)\s+(\S+)$")
 #: Broad candidate hints for the **drift-guard test only** (not used at runtime): the test flags any
 #: config field whose name matches one of these and fails unless it's classified (secret set, or the
 #: test's known-non-secret allowlist) — so a future `client_secret` can't silently go unmasked.
@@ -1315,17 +1318,32 @@ class ShellCfg(BaseModel):
     agent's own `run_shell` tool. BOTH default OFF (owner directive 2026-06-29 + external_audit S/R15):
     arbitrary local shell is a real RCE surface, so it's opt-in even for the owner — the owner drives all
     shell work through the agent's curated tools (open-terminal), not the raw `!` escape hatch. `enabled`
-    is the master switch that still registers the action so it can be turned on per-deployment when wanted.
+    is the master switch, decided at the chokepoint (`permissions.run_shell_gate`) before any bubble.
     """
 
     model_config = {"extra": "allow"}
 
-    enabled: bool = True  # master switch — registers the run_shell action
-    user_exec_enabled: bool = False  # the `!<cmd>` composer escape hatch (POST /api/exec) — OFF by default
-    agent_exec_enabled: bool = False  # the agent's run_shell tool (D3 gate; off → confirm only at FULL)
+    enabled: bool = True  # master switch — off → every run_shell is DENIED, before any bubble (ISS-102)
+    #: the owner's `!` path (POST /api/exec and its queued drains) — any other `Actor.USER` caller of
+    #: `invoke` reads it too, fail-safe — OFF by default
+    user_exec_enabled: bool = False
+    #: the agent's `run_shell` tool at EVERY privilege (off → denied, on → a confirm per call below full;
+    #: full runs unasked) — ISS-87
+    agent_exec_enabled: bool = False
     workdir: str = ""  # cwd for commands; blank → $CTRLB_HOME (home_dir())
     timeout_s: float = 60.0  # kill the process after this many seconds
     max_output_chars: int = 6000  # truncate captured stdout/stderr to this length
+
+
+class RedactCfg(BaseModel):
+    """Secret redaction (`core.redact`, ISS-98). `min_len`: secret values shorter than this are never
+    masked — a 1-char placeholder key or a 4-char password is a substring of ordinary prose, so masking
+    it would corrupt every result and reveal the value; Core Memory's leak check uses the same floor
+    (`Settings.secret_values`)."""
+
+    model_config = {"extra": "allow"}
+
+    min_len: int = Field(default=8, ge=1)  # chars, raw length; 8 = NIST SP 800-63B's password floor
 
 
 class TailscaleCfg(BaseModel):
@@ -2336,6 +2354,8 @@ class Settings(BaseModel):
     voice: VoiceCfg = Field(default_factory=VoiceCfg)
     open_terminal: OpenTerminalCfg = Field(default_factory=OpenTerminalCfg)
     shell: ShellCfg = Field(default_factory=ShellCfg)
+    #: The redaction floor (ISS-98): configured secrets shorter than `redact.min_len` are never masked.
+    redact: RedactCfg = Field(default_factory=RedactCfg)
     tailscale: TailscaleCfg = Field(default_factory=TailscaleCfg)
     #: Foreground notification preferences (F1) — read by the client through the thin
     #: `GET /api/notifications`; the backend never sends a notification itself.
@@ -2616,11 +2636,43 @@ class Settings(BaseModel):
         p = Path(self.memory.memory_dir).expanduser()
         return p if p.is_absolute() else (self.home_dir() / p)
 
-    def secret_values(self) -> list[str]:
-        """The live config's secret leaf values (api keys, ssh passwords, …) — for redacting them out
-        of free text like `session_search` snippets (7e-e, D15 #7). Plain strings at the config layer
-        (the file is gitignored; the API masks on read), so `model_dump()` yields the real values."""
-        return secret_values(self.model_dump())
+    def _secret_items_floored(self, min_len: int | None) -> tuple[list[str], list[str]]:
+        """(kept values, paths of values below the floor) — one walk (`_secret_items`), shared by
+        `secret_values` and `short_secret_paths`. A `Bearer|Basic|Token <cred>` value also yields its
+        bare credential (an echo of the token alone must mask too); a value blank after `strip()` is
+        dropped; the floor is measured on the RAW value (stripping would let an 8-char credential with
+        edge whitespace slip under it as "7 chars")."""
+        floor = self.redact.min_len if min_len is None else min_len
+        kept: list[str] = []
+        short: list[str] = []
+        for path, value in _secret_items(self.model_dump()):
+            forms = [value]
+            if m := _AUTH_SCHEME_VALUE.match(value):
+                forms.append(m.group(1))
+            for form in forms:
+                if not form.strip():
+                    continue
+                if len(form) < floor:
+                    if path not in short:
+                        short.append(path)
+                    continue
+                kept.append(form)
+        return kept, short
+
+    def secret_values(self, min_len: int | None = None) -> list[str]:
+        """The live config's secret values (api keys, ssh passwords, credential-map entries …) at or
+        above the redaction floor (`redact.min_len` unless `min_len` is given) — what the egress funnel
+        (`ActionService._record`), `session_search` snippets (7e-e, D15 #7) and Core Memory's leak check
+        mask against. Plain strings at the config layer (the file is gitignored; the API masks on read),
+        so `model_dump()` yields the real values. The module-level `secret_values(data)` stays
+        unfloored (the hygiene/drift tests read every collected value)."""
+        return self._secret_items_floored(min_len)[0]
+
+    def short_secret_paths(self) -> list[str]:
+        """The config PATHS (dotted — `providers.<name>.api_key`, `computers.<id>.ssh_password`,
+        `<block>.headers.<Key>`; a list item by its index) of secret values below `redact.min_len` —
+        never the values. The startup warning names them."""
+        return self._secret_items_floored(None)[1]
 
     def skills_dir_path(self) -> Path:
         """Absolute path to the skills directory. `agent.skills_dir` (default `skills`) resolved against
@@ -3520,25 +3572,32 @@ def mask_secrets(data: Any) -> Any:
     return data
 
 
-def secret_values(data: Any) -> list[str]:
-    """Collect the non-empty secret *leaf values* from a settings/dict tree — the value-level analog of
-    `mask_secrets` (declared leaves + secret-named entries of the `env`/`headers` maps). Used to redact
-    those secrets out of free text (e.g. `session_search` snippets) via `core.redact.redact`."""
-    out: list[str] = []
+def _secret_items(data: Any, path: str = "") -> Iterator[tuple[str, str]]:
+    """THE secret walker: yield `(dotted_path, value)` for every non-empty secret *leaf value* in a
+    settings/dict tree — the value-level analog of `mask_secrets` (declared leaves + secret-named
+    entries of the `env`/`headers` maps). A list item's path segment is its index. Every collector
+    (`secret_values`, `Settings.secret_values`/`short_secret_paths`) consumes this one walk."""
     if isinstance(data, dict):
         for k, v in data.items():
+            here = f"{path}.{k}" if path else str(k)
             if k in _SECRET_LEAF_KEYS and isinstance(v, str) and v:
-                out.append(v)
+                yield here, v
             elif k in _SECRET_MAP_KEYS and _is_flat_scalar_map(v):
-                out.extend(
-                    mv for mk, mv in v.items() if _map_key_is_secret(mk) and isinstance(mv, str) and mv
-                )
+                for mk, mv in v.items():
+                    if _map_key_is_secret(mk) and isinstance(mv, str) and mv:
+                        yield f"{here}.{mk}", mv
             else:
-                out.extend(secret_values(v))
+                yield from _secret_items(v, here)
     elif isinstance(data, list):
-        for v in data:
-            out.extend(secret_values(v))
-    return out
+        for i, v in enumerate(data):
+            yield from _secret_items(v, f"{path}.{i}" if path else str(i))
+
+
+def secret_values(data: Any) -> list[str]:
+    """Collect the non-empty secret *leaf values* from a settings/dict tree (`_secret_items`), with NO
+    floor — the hygiene/drift tests read every collected value. Runtime redaction reads the floored
+    `Settings.secret_values()` instead."""
+    return [v for _, v in _secret_items(data)]
 
 
 def unmask_secrets(incoming: Any, stored: Any) -> Any:

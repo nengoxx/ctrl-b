@@ -471,9 +471,11 @@ def test_run_shell_decide_unchanged_across_pin() -> None:
 
     spec = build_registry().get("run_shell").spec
     assert spec.confirm is True  # R1 pin in place
-    # The truth table asserted by test_shell_5 — unchanged (HIGH ≡ confirm below FULL).
+    # The truth table asserted by test_shell_5 (HIGH ≡ confirm below FULL; the shell gate binds at FULL
+    # too since ISS-87 — a closed gate is DENY at every privilege).
     assert decide(spec, Privilege.CONFIRM, run_shell_allowed=False) is Decision.DENY
-    assert decide(spec, Privilege.FULL, run_shell_allowed=False) is Decision.ALLOW
+    assert decide(spec, Privilege.FULL, run_shell_allowed=False) is Decision.DENY
+    assert decide(spec, Privilege.FULL, run_shell_allowed=True) is Decision.ALLOW
     assert decide(spec, Privilege.CONFIRM, run_shell_allowed=True) is Decision.CONFIRM
     # …and un-approvable: an approval can NOT downgrade the forced confirm.
     assert decide(spec, Privilege.CONFIRM, run_shell_allowed=True, approved=True) is Decision.CONFIRM

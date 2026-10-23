@@ -13,6 +13,7 @@ import socket
 
 from pydantic import BaseModel, Field
 
+from app.core.redact import clip
 from app.core.tool import InvocationContext, tool
 from app.domain.enums import RunState
 from app.domain.result import ToolResult
@@ -60,7 +61,9 @@ async def dns_trace(inp: DnsTraceInput, ctx: InvocationContext) -> ToolResult:
     try:
         data = await asyncio.to_thread(_resolve, host)
     except (socket.gaierror, socket.herror) as exc:
-        return ToolResult(state=RunState.ERROR, summary=f"Could not resolve '{host}'.", error=str(exc)[:200])
+        return ToolResult(
+            state=RunState.ERROR, summary=f"Could not resolve '{host}'.", error=clip(str(exc), 200)
+        )
     n = len(data["addresses"])
     ptr = f" · {data['ptr']}" if data["ptr"] else ""
     return ToolResult(

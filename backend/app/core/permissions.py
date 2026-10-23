@@ -10,11 +10,12 @@ shutdown (risk=HIGH, confirm=True) → CONFIRM.
 Slice 8 / D44 adds a persisted-approval rung: an owner-authored allow-only rule that matched the
 call (`approval_match` below, consulted by `ActionService.invoke`) sets `decide(approved=True)`,
 which downgrades a *risk-derived* CONFIRM to ALLOW — and NOTHING else. The precedence ladder is
-*ordered-deny-overrides*: policy DENY (structurally first) > designer forced-confirm
-(`spec.confirm=True`, un-downgradable below FULL — `approved` is ignored) > persisted approval
-(risk CONFIRM→ALLOW) > the normal risk decision. An approval can never resurrect a DENY nor force
-a CONFIRM/DENY (allow-only by construction). `canonical_str`/`glob_escape`/`approval_match` are
-the single (backend-only) implementation of the match — the FE never serializes rules (§5).
+*ordered-deny-overrides*: policy DENY (the shell gate at EVERY privilege · READONLY-on-actions) >
+designer forced-confirm (`spec.confirm=True`, un-downgradable below FULL — `approved` is ignored) >
+persisted approval (risk CONFIRM→ALLOW) > the normal risk decision. An approval can never resurrect a
+DENY nor force a CONFIRM/DENY (allow-only by construction). `canonical_str`/`glob_escape`/
+`approval_match` are the single (backend-only) implementation of the match — the FE never serializes
+rules (§5).
 """
 
 from __future__ import annotations
@@ -25,12 +26,12 @@ from enum import StrEnum
 from typing import TYPE_CHECKING
 
 from app.core.tool import ToolSpec
-from app.domain.enums import Privilege, Risk
+from app.domain.enums import Actor, Privilege, Risk
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
-    from app.config import ApprovalRule
+    from app.config import ApprovalRule, ShellCfg
 
 
 class Decision(StrEnum):
@@ -122,6 +123,21 @@ def approval_match(rules: Iterable[ApprovalRule], args: dict[str, object]) -> Ap
     return None
 
 
+def run_shell_gate(shell: "ShellCfg", actor: Actor) -> str | None:
+    """Which `ShellCfg` key closes `run_shell` for this caller, or None when it is open. The ONE
+    predicate every run_shell gate site reads (`ActionService.invoke`, the batch classifier's decide
+    mirror, `/api/exec` and both steer drains' pre-checks). `Actor.USER` = the owner's own doors (the
+    `!` path — `/api/exec` and its queued drains — and any other `Actor.USER` caller of `invoke`,
+    fail-safe) → `user_exec_enabled`; every other actor (AGENT / AUTOMATION / SYSTEM) is a model or
+    the scheduler → `agent_exec_enabled` — fail-closed: a new actor is never
+    "the owner". `shell.enabled` closes it for everyone (ISS-102: decided here, before any bubble)."""
+    if not shell.enabled:
+        return "shell.enabled"
+    if actor is Actor.USER:
+        return None if shell.user_exec_enabled else "shell.user_exec_enabled"
+    return None if shell.agent_exec_enabled else "shell.agent_exec_enabled"
+
+
 def decide(
     spec: ToolSpec,
     privilege: Privilege,
@@ -130,7 +146,7 @@ def decide(
     run_shell_allowed: bool = False,
     approved: bool = False,
 ) -> Decision:
-    if spec.name == "run_shell" and not run_shell_allowed and privilege != Privilege.FULL:
+    if spec.name == "run_shell" and not run_shell_allowed:  # the shell gate binds at EVERY privilege (ISS-87)
         return Decision.DENY
     if privilege == Privilege.READONLY and spec.category == "action" and spec.risk != Risk.LOW:
         return Decision.DENY

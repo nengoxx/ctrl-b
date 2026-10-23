@@ -19,6 +19,7 @@ from bs4 import BeautifulSoup
 from pydantic import BaseModel, Field
 from youtube_transcript_api import YouTubeTranscriptApi, YouTubeTranscriptApiException
 
+from app.core.redact import clip
 from app.core.tool import InvocationContext, tool
 from app.domain.enums import RunState
 from app.domain.result import ToolResult
@@ -94,7 +95,7 @@ async def yt_captions(inp: YtCaptionsInput, ctx: InvocationContext) -> ToolResul
         return ToolResult(
             state=RunState.ERROR,
             summary="Couldn't fetch captions for that video.",
-            error=str(exc)[:300],
+            error=clip(str(exc), 300),
         )
 
     segments = fetched.to_raw_data()  # [{text, start, duration}, …]
@@ -105,13 +106,14 @@ async def yt_captions(inp: YtCaptionsInput, ctx: InvocationContext) -> ToolResul
     # bounded, so a long video can't blow up the context. The UI downloads the full structured
     # transcript from `data.download` (UI-only).
     text = " ".join(s.get("text", "") for s in segments).strip()
-    output = text[:_AGENT_OUTPUT_CAP]
-    if len(text) > _AGENT_OUTPUT_CAP:
-        output += "\n…(transcript truncated; full text in the download)"
+    output = clip(text, _AGENT_OUTPUT_CAP)
+    # The cut ends in the shared marker (so redaction can see it); the pointer to the full text rides
+    # the summary instead of the old custom tail.
+    full = " Transcript truncated in this output; full text in the download." if output != text else ""
 
     return ToolResult(
         state=RunState.OK,
-        summary=f"{title} — {len(segments)} caption segments (~{words} words).",
+        summary=f"{title} — {len(segments)} caption segments (~{words} words).{full}",
         output=output,
         data={
             "video_id": video_id,

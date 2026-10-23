@@ -34,8 +34,9 @@ opens.
 | A service link opens the LAN address while you are away | minimal (the kit view) never rewrites links to the VPN host; the other themes do when ctrl-b is open over Tailscale | Set the machine's VPN host, and use another theme if you need it |
 | "it was not cancelled and may still be completing on the host" | An SSH action hit its time limit | Wait for the next poll before retrying |
 | Wake-on-connect or presence wake never fires | No MAC; the fleet monitor is off (presence); the machine looked online; a cooldown is running; quiet hours (Wi-Fi arrivals only) | Check those in Conf → Computers and Conf → Server |
-| `// shell exec is disabled (Conf → Shell → user exec)` | The `!` escape hatch is off (the default) | Turn on Conf → Shell → User exec |
-| The same note while User exec is on | The conversation belongs to a repeating automation, which refuses `!` | Run the command in another conversation |
+| `// user shell exec is disabled (shell.user_exec_enabled)` | The `!` escape hatch is off (the default) | Turn on Conf → Shell → User exec |
+| `// user shell exec is disabled (shell.enabled)` | The local shell's master switch is off | Turn on Conf → Shell → Enabled |
+| `// this thread belongs to an automation's continuing conversation — …` after a `!` | The conversation belongs to a repeating automation, which refuses `!` | Run the command in another conversation |
 
 ## Conf and settings
 
@@ -121,12 +122,12 @@ opens.
 ## Known limits
 
 **Security and permissions**
-- At **full** privilege the agent runs `run_shell` without asking, whether **Agent run_shell** is on
-  or off; only `shell.enabled: false` stops it there ([ISS-87](../ISSUES.md)).
-- `POST /api/actions/{name}` can run any registered action, including the ones the UI hides, behind
-  the confirm step ([ISS-88](../ISSUES.md)).
 - A `!` or `run_shell` timeout kills only the shell, not what it started ([ISS-89](../ISSUES.md)).
-- Open-terminal output is not masked for secrets ([ISS-98](../ISSUES.md)).
+- Secrets shorter than `redact.min_len` (8 characters) are not masked in tool output (an SSH action
+  still hides its own machine's password) — the server log names them at startup; rotate them.
+- What you or the agent type into a command or a tool call is stored as typed — only results are masked.
+- A past-conversation search snippet can show a secret when the search's match markers or the snippet's window edge fall inside it
+  ([ISS-118](../ISSUES.md)).
 
 **Settings and operations**
 - After a failed update, `update.sh` names the exact backups to restore (config and agent files of

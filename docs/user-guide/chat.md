@@ -117,7 +117,7 @@ What happens when the agent calls a tool depends on the tool's risk and the priv
 | `ping_host`, `wake_host`, `start_service`, `check_service`, `open_service_url` | Reach, wake and check fleet machines and services | runs | runs | runs | runs |
 | `stop_service`, `restart_service` | Stop or restart a service on a host | blocked | asks | runs | runs |
 | `shutdown_host`, `reboot_host` | Shut down or reboot a host | blocked | asks | asks | runs |
-| `run_shell` | Shell command on the ctrl-b server | blocked | see below | see below | **runs** |
+| `run_shell` | Shell command on the ctrl-b server | blocked | see below | see below | see below |
 | `terminal_exec`, `terminal_write_file` | Command / file write on the open-terminal host (only when open-terminal is configured) | blocked | asks | asks | runs |
 | `terminal_read_file`, `terminal_list`, `terminal_grep`, `terminal_glob` | Read-only file access on the open-terminal host | runs | runs | runs | runs |
 | `web_search` | Web search (needs Conf → SearXNG) | runs | runs | runs | runs |
@@ -133,7 +133,7 @@ What happens when the agent calls a tool depends on the tool's risk and the priv
 
 **Always-allow rules.** A medium- or high-risk tool also runs without asking when an always-allow rule you saved for it covers the call — at any level, except for what Read blocks. A rule with no fields covers every call of that tool. Rules never apply to shutdown, reboot, `run_shell` and `create_automation`. See [Tools](tools.md#the-agent-tools-catalog).
 
-`run_shell`, today: when `shell.enabled` is off, every run is refused. At Read it is always refused. At Confirm and Auto-low it is refused while the agent shell toggle (`shell.agent_exec_enabled`) is off and asks when it is on. **At Full it runs without asking even when that toggle is off** — the only off switch at Full is `shell.enabled: false` ([ISS-87](../ISSUES.md)). Treat `full` as "this agent may run shell commands on the server".
+`run_shell`: when `shell.enabled` is off, every run is refused before anything asks you. While the agent shell toggle (Conf › Shell › **Agent run_shell**, `shell.agent_exec_enabled`) is off, it is refused at every level, Full included. When the toggle is on, it asks at Confirm and Auto-low and runs without asking at Full. At Read it is always refused. The refusal names the switch that is off. Treat Full with that toggle on as "this agent may run shell commands on the server".
 
 Agents running unattended (automations, subagents) never get a bubble: anything that would ask is refused on the spot and the agent is told.
 
@@ -144,7 +144,7 @@ Every agent has a privilege level (its form in the [Agents](agents.md) gallery; 
 - **Read** — fleet and host actions above low risk are blocked: stopping or restarting a service, shutdown, reboot, `run_shell`, the open-terminal's command and write tools. Everything else behaves as under Confirm: MCP and OpenAPI tools, `spawn_subagents` and `create_automation` are not blocked — they ask (or run, when low risk) exactly as they would under Confirm.
 - **Confirm** — low-risk tools run; medium- and high-risk tools ask.
 - **Auto-low** — medium-risk tools run without asking (stop/restart a service, `spawn_subagents`, MCP/OpenAPI tools at the default risk); high-risk tools ask.
-- **Full** — everything runs without asking, including `run_shell`.
+- **Full** — everything runs without asking, including `run_shell` when Agent run_shell is on.
 
 The override is not capped: any level, `full` included, can be set from the chip.
 
@@ -156,7 +156,7 @@ Agents remember things in small markdown files, read into every turn:
 - one shared `USER.md` about you, read by every agent (1,375 characters),
 - optionally each agent's `STATE.md` — mood and energy, off by default (600 characters).
 
-The agent changes them with its `memory` tool (add, replace, remove). A write past the cap is refused. With **Auto-write** off, each change arrives as a proposal you approve in the chat (state changes still apply on their own). `session_search` lets an agent search your past conversations — across all agents, secrets redacted.
+The agent changes them with its `memory` tool (add, replace, remove). A write past the cap is refused. With **Auto-write** off, each change arrives as a proposal you approve in the chat (state changes still apply on their own). `session_search` lets an agent search your past conversations — across all agents, secrets of 8+ characters redacted (`redact.min_len`).
 
 You can read and edit every memory file in Conf → Memory (one row per file; blanking a file clears it). The same panel has the optional **Consolidation nudge** (warn the agent when a file nears its cap), **Emotional state** (`STATE.md`) and **Periodic reflection** (every 10 of your messages, nudge the agent to save what matters).
 

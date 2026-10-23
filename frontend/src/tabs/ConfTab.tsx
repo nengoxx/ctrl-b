@@ -2635,7 +2635,7 @@ export function ConfTab({ active }: Props) {
           </SettingRow>
           <SettingRow
             label="Agent run_shell"
-            desc="let the agent call run_shell (else confirm at full only)"
+            desc="let agents call run_shell — asks each call below full; off = never"
           >
             <Switch
               on={!!sh?.agent_exec_enabled}

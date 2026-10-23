@@ -10,10 +10,10 @@ This block used to live inline in the `/exec` endpoint. Slice 5's steer drain (`
 must run the SAME logic when it dequeues an `exec` steer, so it was EXTRACTED here verbatim: the
 endpoint and the drain both call this — one implementation, zero duplication.
 
-The `shell.user_exec_enabled` gate is the CALLER's responsibility (fail-closed at each site): the
-endpoint checks it up-front (403), and the drain re-checks it LIVE at dequeue time (D41 fail-closed —
-disabling the shell mid-queue must drop a queued command, never run it). This helper assumes the gate
-already passed and just runs + persists.
+The USER shell gate (`run_shell_gate(…, Actor.USER)`: `shell.enabled` + `shell.user_exec_enabled`):
+the caller enforces it up front (UX) — the endpoint (403) and the drain, re-checked LIVE at dequeue time
+(D41: disabling the shell mid-queue must drop a queued command, never run it) — and the `invoke`
+chokepoint enforces it too (fail-closed). This helper just runs + persists.
 """
 
 from __future__ import annotations
@@ -51,7 +51,8 @@ async def run_user_exec(
 ) -> ExecOutcome:
     """Invoke `run_shell` at FULL for the owner's `!<cmd>`, then persist the assistant tool_call + tool
     result pair atomically (SYS-1). The single implementation shared by the `/exec` endpoint and the
-    D41 steer drain. Caller must have already enforced `shell.user_exec_enabled` (fail-closed)."""
+    D41 steer drain. The caller enforces the USER shell gate up front (UX); the chokepoint enforces it
+    too (fail-closed)."""
     outcome = await actions.invoke(
         "run_shell",
         {"command": command},
