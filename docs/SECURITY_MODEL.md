@@ -20,9 +20,13 @@ The person who can reach the endpoint *is* the owner, by construction of the net
 **What the design defends against:**
 - **Accidental public exposure** — the app never binds a public interface; the only ingress is the tailnet.
 - **Secret leakage** — SSH passwords / API keys must never surface in a tool result, API response, log line,
-  or SSE frame, even when a command echoes them — enforced by redacting the output of the commands ctrl-b
-  runs itself (the local shell, the SSH power/service commands, §2.4); open-terminal's output is NOT redacted
-  (ISS-98).
+  or SSE frame, even when a command echoes them. For tool RESULTS and what is built from them (the Event row,
+  the SSE frames, the API responses that carry a result) this is enforced once, at the tool-result boundary,
+  for every tool (the egress funnel `ActionService._record`, §2.4), with the residuals §2.4 names (values
+  under `redact.min_len`, tool-call arguments, [ISS-118](./ISSUES.md)). Log lines are not passed through the
+  funnel: the shell and SSH actions redact their output at capture, the rule is that nothing logs a secret
+  (the startup warning names config paths only), and a logged exception text is not masked. The config API
+  read masks secrets separately (`mask_secrets`, §2.4).
 - **Unintended destructive actions** — at the default `confirm` privilege a medium/high-risk operation
   (shutdown, reboot, service stop) can't fire without an explicit second step (the confirm bubble), so a
   stray click or an over-eager agent turn can't silently take a machine down. The owner widens that on
@@ -67,6 +71,15 @@ authentication layer first.
   same API, minus Vite). HTTP has no secure context, so the mic still requires the Serve HTTPS URL.
   Nothing listens on a public interface either way. Egress to the fleet (SSH/ping/WOL) is separate and
   unaffected.
+- **The machine-wide voice engines bind `0.0.0.0` — an OWNER WAIVER (2026-10-22, [ISS-106](./ISSUES.md); for the
+  ASR engines beside Speaches, ASR_PLAN R10 had ruled it 2026-09-30):** speaches `:9000` · parakeet-live `:9010` · parakeet-clip `:9011` · PocketTTS
+  `:8890` listen on every interface, so a UI or a service on another of the owner's machines can use them over the
+  LAN + tailnet. Free compute only — no secrets, no fleet reach; no key and no Host check, so a LAN page could
+  reach them by DNS rebinding (impact: CPU/GPU contention), accepted under the same trusted-LAN reasoning as the
+  prod waiver. PocketTTS was NOT covered by R10: it was loopback-only until the owner's 2026-10-22 ruling opened
+  it (its loopback bind was a local commit on `~/github/PocketTTS.cpp`, reverted as `84f2a13`; the bind is
+  compiled in — it has no `--host` flag). Both ctrl-b instances reach all
+  four over loopback either way.
 - The only **HTTPS** ingress — the only secure context, so the only door the mic works through — is
   **Tailscale Serve**, which fronts the local app as `https://<host>.<tailnet>.ts.net` with an auto-renewed
   Let's Encrypt cert (DECISIONS D1). It is **tailnet-only** — you must be on the tailnet to reach it; nothing
@@ -94,7 +107,7 @@ pure decision function, **`core/permissions.py` `decide(spec, privilege)`** → 
 
 | Condition | Decision |
 |---|---|
-| `run_shell` and privilege ≠ `FULL` (and not explicitly allowed) | **DENY** |
+| `run_shell` and the caller's shell gate is closed (`run_shell_gate`: `shell.enabled` off, or the caller's toggle off — `shell.user_exec_enabled` for `Actor.USER`, `shell.agent_exec_enabled` for every other actor) — at EVERY privilege, `FULL` included (§5) | **DENY** |
 | privilege `READONLY` and it's an `action` with risk ≠ `LOW` | **DENY** |
 | `spec.confirm` (designer forced-confirm) | `FULL` → ALLOW, else **CONFIRM** — *un-downgradable; a persisted approval is ignored here (§2.5)* |
 | risk `HIGH` | `FULL` **or an approval matched** → ALLOW, else **CONFIRM** |
@@ -110,19 +123,21 @@ pure decision function, **`core/permissions.py` `decide(spec, privilege)`** → 
   own HTTPS front door *is* the explicit user act, and re-confirming a toggle the owner just flipped in
   Conf → Server's *HTTPS access (Tailscale Serve)* card buys nothing. The path is itself gated: the endpoint
   403s unless `tailscale.enabled` (D20), the actions are `ui_exposed=False`/`agent_exposed=False` (not
-  listed in the UI and never offered to the agent — but the generic action API still reaches them behind
-  a confirm token, see the next bullet), and both are `idempotent`.
-- **`ui_exposed` / `agent_exposed` are listing flags, not gates** (corrected 2026-10-14; ISS-88).
-  `POST /api/actions/{name}` resolves `name` against the WHOLE registry (`api/actions.py` `invoke_action` →
-  `ActionService.invoke`, whose defaults are `Actor.USER, Privilege.CONFIRM`) and runs it through `decide()`,
-  so **every registered tool is reachable there**, two-step for anything MED/HIGH/forced-confirm:
-  `tailscale_serve_enable`/`_disable` (MED → a confirm token), `run_shell` (DENIED unless
-  `shell.agent_exec_enabled`, then a confirm token — **independent of `shell.user_exec_enabled`**, which only
-  gates `POST /api/exec`), `terminal_*`, MCP/OpenAPI tools. `ui_exposed` decides only what the UI lists and
-  what `POST /api/tools/{name}` accepts (`api/tools.py` `_is_util_card`); `agent_exposed` decides what the
-  model is offered. Consistent with the trust model (the tailnet is the auth, §1), but "not in the UI" never
-  means "not callable". Whether the generic route should honour `ui_exposed` is an open owner call
-  ([ISS-88](./ISSUES.md)).
+  listed in the UI, never offered to the agent, and refused by the generic action route — see the next
+  bullet), and both are `idempotent`.
+- **The generic action route honours `ui_exposed`** (owner ruling 2026-10-22, [ISS-88](./ISSUES.md) — fixed;
+  D87). `POST /api/actions/{name}` (`api/actions.py` `invoke_action`) resolves the tool first and answers
+  **404 `unknown action '<name>'` — exactly as for an unknown name — for any tool that is not `ui_exposed`**,
+  before `ActionService.invoke` runs. So `run_shell`, `tailscale_serve_*`, `terminal_*`, MCP/OpenAPI tools
+  and every other agent-only tool are not callable there: the Serve actions reach the gate only through
+  `/api/access` (its own `tailscale.enabled` 403, above), `run_shell` only through `/api/exec` (the owner's
+  `!`, §5) and the agent. `GET /api/actions` still lists the whole registry (the Tools catalog renders every
+  tool's agent mode); `POST /api/tools/{name}` keeps its own narrower guard (utility + `ui_exposed`,
+  `api/tools.py` `_is_util_card`); `agent_exposed` decides what the model is offered. What the guard does
+  NOT close: a tool hidden from the UI but offered to the agent (`agent_exposed` — `run_shell`, `terminal_*`,
+  MCP/OpenAPI) stays reachable through the agent door (`/api/agent/chat` takes a per-request `privilege` with no
+  clamp, and a model that complies); the Serve actions are `agent_exposed=False`, so not even there — DNS rebinding is `server.trusted_hosts`'s job
+  (§2.9, §3), not this route's.
 - **The owner's `/privilege` override persists per DEVICE (Phase 27, D84 ON4 — owner, 2026-10-06).** An
   interactive owner may raise or lower a chat turn's privilege: `ChatRequest.privilege` is most-specific-wins,
   **no clamp** (the only clamp is `agent.subagent_clamp_privilege`, subagent ≤ parent). The `/privilege` and
@@ -195,8 +210,10 @@ When `decide()` returns `CONFIRM`, `services/action_service.py` mints a **single
 ### 2.4 Secret redaction
 Secrets live in config, never in code (§4). The chokepoint that keeps them out of outputs is
 **`core/redact.py` `redact(text, secrets)`** — it masks each secret value (`••••`) in any captured `output`
-before it becomes a `ToolResult` / `Event` / log line / SSE frame. Secret values are enumerated by
-`config.py secret_values()`, and the config API read masks them via `mask_secrets()`/`_mask()`.
+before it becomes a `ToolResult` / `Event` / log line / SSE frame; `redact_result(result, secrets)` applies it
+across a whole result (§ "Where redaction runs" below). Secret values are enumerated by
+`Settings.secret_values()` (one walker, `config.py` `_secret_items`; floored at `redact.min_len`), and the
+config API read masks them via `mask_secrets()`/`_mask()`.
 
 Secrets are identified by **two explicit rules** (not name-substring guessing, which collided with
 non-secret fields like `threshold_tokens`): (1) an **exact-name allowlist** of declared secret fields
@@ -212,12 +229,67 @@ provider/model name colliding with a secret-sentinel key is additionally rejecte
 introspects the whole `Settings` model and fails if a future secret-looking field is left unclassified,
 so the classification can't silently rot. (Tests: `backend/tests/test_secret_hygiene.py`.)
 
-**Where `redact()` actually runs (as built, verified 2026-10-14):** `run_shell` output is redacted against
-every config secret (`services/actions/shell.py` `_run`); an SSH action's output and error are redacted
-against **that host's** password only (`services/actions/_common.py`); **open-terminal output is NOT
-redacted** (`services/actions/terminal.py` has no `redact` call — it returns the remote terminal's text as
-is); and an Event's `summary` (`$ <command> — exit N`) is never redacted, so a secret typed into a command
-line lands in the event log verbatim.
+**Where redaction runs (as built 2026-10-22, [ISS-98](./ISSUES.md) fixed; D87):**
+- **Once, for every tool, at the egress funnel `ActionService._record`** (`services/action_service.py`). Its
+  first statement is `redact_result(result, settings.secret_values())` (`core/redact.py`), which masks the
+  result's `summary`, `output`, `error` and `data` (walked recursively: strings masked, dict values and list
+  items recursed, keys and non-strings untouched) for **every `invoke` outcome** — executed, DENIED by policy,
+  `record_policy_denial` — before the result is returned, persisted, framed or audited. Open-terminal,
+  MCP / OpenAPI tools, the web tools, subagents and every future tool are covered by construction; the
+  Event's `summary` (`$ <command> — exit N`) is masked too, because it is the result's summary. `artifacts`
+  are left alone (server-side names/paths — masking one would break its download). The secrets are read live
+  from the shared settings object on every call, so a Conf edit applies at the next call.
+- **Writers outside `invoke`:** `POST /api/agent/apply` (an owner-approved memory/skill proposal) masks itself
+  — it calls `redact_result` before it persists, audits or returns (`api/agent.py`). The others do not (see the
+  residuals): `POST /api/agent/plan`'s owner-authored `task_plan` call + result pair, the session's synthesized
+  results for an `invoke` that raised, and the automation run bookkeeping.
+- **The per-action calls stay, as defence in depth** (calls to the one implementation, not a second
+  mechanism): `run_shell` redacts its output against every config secret BEFORE clipping it
+  (`services/actions/shell.py` `_run`); an SSH action's output and error are redacted against **that host's**
+  password (`services/actions/_common.py`, `shutdown.py`, `reboot.py` — the raw password, whatever its
+  length); `session_search` redacts its snippets (one known gap, [ISS-118](./ISSUES.md)). A new tool needs no call of its own: the funnel is the
+  guarantee.
+- **What `redact` matches:** each secret AND its JSON-escaped form (a value carrying `"`, `\` or a non-ASCII
+  char reads differently inside `json.dumps` text), deduplicated and applied longest first (a secret nested
+  in a longer one leaves no remnant). A `Bearer|Basic|Token <cred>` value also yields its bare credential.
+- **`clip` is the shared truncation of result text** (`core/redact.py`; the caps that are not `clip` are listed
+  as residuals): every cut ends in `TRUNCATION_MARKER`
+  (`\n… [truncated]`), and the **straddle rule** masks a secret the cut split — before EVERY marker in the text
+  (trailing or embedded, e.g. inside a subagent aggregate), the longest lead of any secret (4+ chars) that ends
+  just before the marker becomes `••••`. A 3-char lead such as `sk-` is shared by every key of its kind and is
+  left alone.
+- **The floor — `redact.min_len`** (default **8**, `RedactCfg`): `Settings.secret_values()` drops values
+  shorter than it (and blank ones). A short value is ordinary text: the measured live configs held two 1-char
+  placeholder keys and four 4–5-char SSH passwords, and the 4-char one occurs in ordinary chat text — masking it
+  would corrupt every result and reveal the value. The same floor is Core Memory's containment gate (§2.6). At
+  boot, one WARNING names the config PATHS below the floor (never a value; `main.py` `_warn_short_secrets`).
+
+**Residuals (recorded, not fixed):**
+- **Values under `redact.min_len` are not masked** by the funnel, `run_shell` or `session_search` until they are
+  rotated to ≥ the floor (an SSH action still masks its own host's password in its own output). The startup
+  warning names them. This NARROWED two older paths: before wave 2 `Settings.secret_values()` had no floor, so
+  `run_shell` output and `session_search` snippets masked every configured value, the 4–5-char SSH passwords
+  included.
+- **Tool-call ARGUMENTS are never masked** — the call the model (or the owner's `!`) made is persisted as it
+  was sent, and the session's synthesized results for an `invoke` that RAISED (`unknown tool` / `invalid
+  arguments`, and the parallel path's catch-all `{tool} failed`, `session.py` `_invoke_error_result` — a
+  non-`clip` `[:300]` cut of the exception text) sit outside the funnel; the model's own text is not masked
+  either.
+- **`session_search` snippets ([ISS-118](./ISSUES.md), OPEN):** FTS5's `snippet()` (`services/conversation.py`)
+  wraps the query's matches in `«»` markers and opens its window with `…`; when a match or the window edge falls
+  INSIDE a configured secret stored in a message, the secret is no longer contiguous and neither the per-action
+  `redact` nor the funnel matches it (the straddle rule keys on `clip`'s marker, not FTS5's `…`).
+- **Value matching only:** a secret ctrl-b does not hold in its config is not recognised (no pattern pass —
+  vendor key prefixes, JWTs — is built), nor is a held value echoed in another encoding (URL-encoded, base64);
+  `data` is walked as dicts and lists (tuples pass through; keys are structure).
+- **Two OVERLAPPING (not nested) secrets** may leave a fragment of the one replaced second.
+- **Cuts that are not `clip` have no straddle rule:** `services/agent/core_memory.py` — its own `_clip` "…"
+  cut (search excerpts at 200 chars per matching line; index titles and hooks) and the `[:cap]` clamps in
+  `render_hits` and `_fit` — and `core/attachments.py` (one — a secret inside an uploaded file, cut at the
+  read cap).
+- **Outside the funnel by design:** the automation run bookkeeping (`automations/service.py` — run-level rows,
+  no tool output) and `POST /api/agent/plan`'s owner-authored `task_plan` pair.
+- **History is not scrubbed:** results stored before the funnel shipped keep what they held.
 
 ### 2.5 Persisted approvals — "always allow" (D44, ACA Slice 8)
 
@@ -321,8 +393,9 @@ the slot is on. Two rails hold it, plus one framing:
   (never the delta) through `_guard_secrets()` on `Settings.secret_values()` (§2.4) and refuses the
   write without echoing the value. It is a containment check on **known** configured values — shape
   detection is an explicit non-goal — and it is **BEST-EFFORT by construction, not a boundary:**
-  values shorter than `_SECRET_MIN_CHARS = 8` are skipped (a 1-char placeholder key is a substring of
-  every file and would brick the write path), so a real ≤7-char credential is *outside* the rail. Full
+  values shorter than `redact.min_len` (default 8 — ONE floor for this gate and the redactor, §2.4;
+  `Settings.secret_values()` drops them) are skipped (a 1-char placeholder key is a substring of
+  every file and would brick the write path), so a real credential under the floor is *outside* the rail. Full
   reasoning: [`CORE_MEMORY_PLAN.md`](./CORE_MEMORY_PLAN.md) §14b. Two **documented no-gate carve-outs**:
   `delete` (its index write only *removes* lines — a strict subset of content that already passed, and
   gating it would make the one operation that cleans up a leak refusable by that leak) and the
@@ -822,7 +895,7 @@ So **the automation's privilege IS its authorization**, decided at authoring tim
 | `readonly` | LOW tools; a non-LOW `action`-category tool is DENIED outright; a MED/HIGH tool outside `action` (MCP/OpenAPI, `spawn_subagents`) only when a D44 approval rule matches (§2.5); anything else that would ask is DENIED in place |
 | `confirm` | LOW tools; a MED/HIGH tool only when a D44 approval rule matches (§2.5); forced-confirm tools (`run_shell`, `shutdown_host`, `reboot_host`) never |
 | `auto_low` | LOW + MED; HIGH only when an approval matches; forced-confirm tools never |
-| `full` | **everything**, forced-confirm tools included — `run_shell` too, whatever `shell.agent_exec_enabled` says (§5), unless `shell.enabled: false` |
+| `full` | **everything**, forced-confirm tools included — `run_shell` too when `shell.enabled` and `shell.agent_exec_enabled` are on (either off → DENIED, §5) |
 
 - **Where the privilege comes from.** `AutomationDraft.privilege` — `null` (the default) means **the resolved
   agent's own AgentDef level**, so an automation for an agent that is `full` runs at `full`. Only the REST /
@@ -852,14 +925,15 @@ Honest register. "Accepted" = intended within the boundary; "gap → step N" = a
 |---|---|---|
 | Confirm-tokens don't authenticate | **accepted** | The tailnet is the auth (§1/§2.3). By design. |
 | **Confirm-tokens are in-memory** — a backend restart between mint and confirm orphaned the pending bubble | **closed (step 4b ✓ 2026-07-02)** | Robustness, not a breach — and no longer a gap: PRE_DEPLOY step 4b (J3) shipped server-side re-mint. The durable persisted `AWAITING_CONFIRM` call + the explicit `execute` are the confirmation, so `session.resume(execute)` re-mints via `ActionService.confirm_token_for()` and one click still works after a restart / 120 s expiry / reload. Test-locked by `test_confirm_recovery_j3.py`. (ACA Slice 1 later ruled the *orphan* token is CONSUMED on re-mint — §2.3.) |
-| Secret redaction / masking correctness | **test-locked (step 3 ✓)** | `test_secret_hygiene.py` proves every real secret is masked/collected/redacted, non-secrets never are, and the policy gate can't drift. Note redaction is still *best-effort within* the `env`/`headers` maps (secret-named entries only) — by design (§2.4). |
+| Secret redaction / masking correctness | **test-locked (step 3 ✓; the funnel 2026-10-22, ISS-98)** | `test_secret_hygiene.py` proves every real secret is masked/collected/redacted, non-secrets never are, and the policy gate can't drift; `test_redact_iss98.py` proves every `invoke` outcome is masked at the egress funnel `ActionService._record` (open-terminal, a raising tool, the agent path). Note redaction is still *best-effort within* the `env`/`headers` maps (secret-named entries only) — by design (§2.4). **Residual:** a secret shorter than `redact.min_len` (default 8) is not masked — the startup warning names it; rotate it (§2.4, with the other residuals, incl. the `session_search` snippet gap [ISS-118](./ISSUES.md)). |
 | `paramiko` uses `AutoAddPolicy` (accepts unknown SSH host keys; no `known_hosts` pinning) | **accepted** | Acceptable only inside the trusted tailnet (`adapters/ssh.py`). Would need pinning if the boundary widened. |
-| Local shell (`!`) + agent `run_shell` = remote code execution by design | **accepted, off by default — with one exception** | See §5. Both toggles default off; RCE is the point when enabled. **The exception:** an agent at `FULL` privilege runs `run_shell` with no confirm even with `shell.agent_exec_enabled` off — only `shell.enabled: false` stops it ([ISS-87](./ISSUES.md), §5). |
+| Local shell (`!`) + agent `run_shell` = remote code execution by design | **accepted, off by default** | See §5. Both toggles default off; RCE is the point when enabled. The gate follows the CALLER at every privilege (`run_shell_gate`, ISS-87 fixed 2026-10-22): with `shell.agent_exec_enabled` off an agent is DENIED even at `full`; with it on, `full` runs `run_shell` unasked — so `full` + the agent toggle on = "this agent may run host shell". |
 | `debug` = RCE surface | **accepted, off by default** | `ServerCfg.debug=False`; never enable on anything reachable. |
 | Dev Vite server exposes the API on the LAN (`0.0.0.0` + `/api` proxy) | **accepted, dev-only** | §2.1 dev-mode exposure; trusted home LAN. |
 | Prod backend on `0.0.0.0:5433` (LAN + tailnet, plain HTTP) | **accepted, owner waiver 2026-07-10** | §2.1; trusted home LAN; strictly narrower than the dev path above; Serve HTTPS remains for mic/secure-context. |
+| The voice engines on `0.0.0.0` (speaches `:9000` · parakeet-live `:9010` · parakeet-clip `:9011` · PocketTTS `:8890`) | **accepted, owner waiver 2026-10-22** ([ISS-106](./ISSUES.md); ASR_PLAN R10 for the ASR engines; PocketTTS opened by the owner the same day) | §2.1; LAN + tailnet reach is intended (other consumers on the owner's machines); free compute, no secrets, no fleet reach; DNS rebinding costs CPU/GPU time only. |
 | MCP / OpenAPI tool providers are external surfaces | **accepted, annotated** | Risk-annotated per tool; never grant blanket `ALLOW`. |
-| **`!exec` steer gate is enforced at DRAIN, not only at enqueue (D41)** | **accepted, fail-closed** | A `!<cmd>` steered into a busy turn checks `shell.user_exec_enabled` at enqueue (UX 403) **and again, live, at drain** — the drain is the only place `run_shell`@FULL actually runs, so disabling the shell mid-queue **drops** the queued command instead of running it. **Commit-before-run:** a harvested/crashed queue **loses** the command rather than double-running it (for a shell command, lost-on-crash beats double-run). |
+| **`!exec` steer gate is enforced at DRAIN, not only at enqueue (D41)** | **accepted, fail-closed** | A `!<cmd>` steered into a busy turn checks the USER shell gate (`shell.enabled` + `shell.user_exec_enabled`, `run_shell_gate`) at enqueue (UX 403) **and again, live, at drain** — the drain is the only place `run_shell`@FULL actually runs, so disabling the shell mid-queue **drops** the queued command instead of running it. **Commit-before-run:** a harvested/crashed queue **loses** the command rather than double-running it (for a shell command, lost-on-crash beats double-run). |
 | **A persisted approval also auto-allows AGENT + headless re-runs of that exact call (D44)** | **accepted, deliberate** | Owner ruling ④ — approvals are actor-agnostic (§2.5). A grant given at a chat bubble silences the same call for the agent and headless subagents. Bounded by args-exact pinning, allow-only matching, the un-approvable forced-confirm rung, and the mandatory `[auto-allowed: …]` summary marker; revocable any time in Conf → Tools. Fail-closed on a miss (headless CONFIRM → DENIED, unchanged). |
 | **Approvals never expire in v1 (D44)** | **accepted** | No TTL / decay-on-disuse (that needs a queryable fire-log = an events-schema migration; reserved). A grant stands until revoked in Conf → Tools or `config.yaml`; revocation is live from the next invoke. |
 | **The media write API will have no kill switch (D65)** | **accepted, owner waiver 2026-08-24** | The whole-feature-toggle rule is knowingly waived: `PUT`/`DELETE /api/media/…` is specified unconditional. A toggle over one typed, allowlisted, registry-confined path buys nothing a rollback does not, and stays trivially additive (§2.7). *Ruled at S0; the routes land at S1.* |
@@ -879,8 +953,10 @@ code. Upheld by:
   0600, masked on API read). `.env` carries bootstrap paths + **declared one-level scalars** and cannot
   address a credential by design (UPDATE_PLAN slice 3). `config.yaml`, `.env`, `clients/`, `*_prompt.*`
   are all gitignored — never commit or echo them.
-- **Output:** anything that captures command output passes it through `redact()` before it leaves the process
-  (§2.4). New execution paths **must** route captured output through `redact()`.
+- **Output:** every `invoke` outcome passes `redact_result` at `ActionService._record` (the egress funnel,
+  §2.4); a capability that captures output may still redact at capture (the shell and SSH actions do). New
+  execution paths that bypass `invoke` **must** route their results through `redact_result()` / `redact()`
+  themselves (as `/agent/apply` does).
 - **Display:** the config API read masks secret-keyed values (`mask_secrets`); a masked value round-trips back
   to the stored real secret on save, so editing config in the UI never blanks a secret. A mask with
   **nothing** to restore (a recreated/renamed provider, a hand-built PUT) is **dropped**, never written
@@ -919,31 +995,50 @@ code. Upheld by:
 ## 5. The shell escape hatches (opt-in RCE)
 
 Two independent, **off-by-default** toggles in `config.py ShellCfg`, under one master switch
-(**`shell.enabled`**, default on — when false every `run_shell` answers DENIED "local shell is disabled" at run
-time, whatever the caller, `services/actions/shell.py` `_run`):
-- **`user_exec_enabled`** (default **False**) — the `!<cmd>` composer escape hatch (`POST /api/exec`): the
-  owner types a shell command that runs on the backend host. Pure RCE by design; off until you turn it on.
-  *(When a `!` is **steered** into a busy turn (D41), this gate is re-checked **fail-closed at drain time**
-  — the only place the command runs — so disabling the shell mid-queue drops the queued command; §3.)*
-- **`agent_exec_enabled`** (default **False**) — the agent's `run_shell` tool, for callers **below `FULL`**
-  (corrected 2026-10-14 — the earlier text said the opposite; [ISS-87](./ISSUES.md)). `decide()` reads it only
-  below `FULL` (`core/permissions.py` `decide`, the first rule): **off** → `run_shell` is DENIED for a
-  `readonly`/`confirm`/`auto_low` caller; **on** → those callers get a confirm bubble on every call
-  (`run_shell` is pinned `confirm=True`, so no approval can skip it; a `readonly` caller stays denied by the
-  READONLY rule — `run_shell` is `category="action"`, risk HIGH). **A `FULL` caller is never gated by
-  this flag:** `decide()` returns ALLOW for `run_shell` at `FULL` with no confirm whether the flag is on or
-  off (pinned by `tests/test_shell_5.py::test_decide_gate_truth_table`). The exemption exists for the owner's
-  own `!<cmd>` path, which invokes `run_shell` at `FULL`, but it also covers an agent whose `privilege` is
-  `full` (by AgentDef, by an automation's `privilege: full`, or by the owner's per-device `/privilege full`).
-  **So the only off-switch for an agent at `FULL` is `shell.enabled: false`.** Treat `full` as "this agent
-  may run host shell". Making the toggle a hard gate at every privilege is the recommended code fix (its own
-  reviewed slice; not built).
-- **The generic action API is a third door:** with `agent_exec_enabled` on, `POST /api/actions/run_shell`
-  plus its confirm token runs a shell as `Actor.USER` even while `user_exec_enabled` is off (§2.2's listing-
-  flags bullet).
+(**`shell.enabled`**, default on), chosen by **who is calling — never by privilege** (built 2026-10-22,
+[ISS-87](./ISSUES.md) + [ISS-102](./ISSUES.md) fixed; D87). **`core/permissions.py` `run_shell_gate(shell, actor)`
+is the ONE predicate:** it returns the `ShellCfg` key that closes `run_shell` for this caller, or `None` when
+it is open — `shell.enabled` for everyone first, then `shell.user_exec_enabled` for `Actor.USER`, and
+`shell.agent_exec_enabled` for every other actor (agent, automation, system — fail-closed: a new actor is
+never "the owner"). Every gate site reads it: `ActionService.invoke` (→ `decide(run_shell_allowed=…)`, the
+guarantee), the batch classifier's decide-mirror (`session.py`), and the up-front checks of `POST /api/exec`
+and both steer drains (UX — a 403 or a dropped queued command instead of a DENIED pair).
+- **`enabled`** (default **True**) — the master switch. Off → every `run_shell` and every `!` is DENIED,
+  decided at the chokepoint **before any confirm bubble** (ISS-102; `shell.py` `_run` no longer checks it — a
+  token minted while the shell was on and redeemed after it went off re-enters `invoke` and is DENIED there).
+- **`user_exec_enabled`** (default **False**) — the `!<cmd>` composer escape hatch (`POST /api/exec`, which
+  invokes `run_shell` as `Actor.USER` at `FULL`): the owner types a shell command that runs on the backend
+  host. Pure RCE by design; off until you turn it on. *(When a `!` is **steered** into a busy turn (D41), this
+  gate is re-checked **fail-closed at drain time** — the only place the command runs — so disabling the shell
+  mid-queue drops the queued command; §3.)*
+- **`agent_exec_enabled`** (default **False**) — the agent's `run_shell` tool, **at every privilege**. The
+  truth table (`decide`, pinned by `tests/test_shell_5.py`):
+
+  | gate | `readonly` | `confirm` | `auto_low` | `full` |
+  |---|---|---|---|---|
+  | closed (`enabled` off, or the caller's toggle off) | DENY | DENY | DENY | **DENY** |
+  | open | DENY (the READONLY rule — `run_shell` is a HIGH `action`) | CONFIRM | CONFIRM | ALLOW |
+
+  `run_shell` is pinned `confirm=True`, so no approval can skip the bubble below `full`. **With the toggle on,
+  `full` runs it unasked** — an agent whose `privilege` is `full` (by AgentDef, by an automation's
+  `privilege: full`, or by the owner's per-device `/privilege full`): treat `full` + this toggle as "this agent
+  may run host shell". With the toggle off no agent's `run_shell` call runs, `full` included (an agent that can reach the API is
+  the residual below).
+- **The denial names the key:** the DENIED summary reads `Run shell denied by policy
+  (shell.agent_exec_enabled is off)` (or `shell.enabled` / `shell.user_exec_enabled`), so the model learns
+  "switched off", not "privilege too low"; `/api/exec` answers 403 `user shell exec is disabled (<key>)` and the
+  composer shows that detail; a queued `!` dropped at drain is reported by drain A (the session's steer queue)
+  as the notice `// shell disabled (<key>) — queued command dropped`, while drain B (`api/agent.py`
+  `_run_steer_exec`, no live stream) only logs the drop.
+- **The actor is a door label, not a principal (residual):** the agent toggle governs the agent's own
+  `run_shell`; an agent that can reach ctrl-b's HTTP API (a network-capable tool at `full`) can use any owner
+  door that is open — keep `user_exec_enabled` off while agents run at `full` with network-capable tools —
+  or flip the shell toggles through `PUT /api/settings`, which any caller that can reach the API may use — the
+  tailnet, and the LAN under the prod waiver (§2.1; the trust model, §1): the toggles bound the agent's own tool, not an agent you have given the network.
 - Guardrails when it runs: cwd = `shell.workdir` (blank → `$CTRLB_HOME`), `bash -lc <cmd>`
-  (`powershell -NoProfile -NonInteractive -Command <cmd>` on a Windows server), output redacted (§2.4) and
-  then truncated to `max_output_chars=6000` keeping the HEAD (`… [truncated]`). **`timeout_s=60` kills the
+  (`powershell -NoProfile -NonInteractive -Command <cmd>` on a Windows server), output redacted at capture,
+  truncated to `max_output_chars=6000` keeping the HEAD (`clip`, `… [truncated]`), then redacted again at the
+  funnel (§2.4). **`timeout_s=60` kills the
   direct child only** (`core/proc.py` `run_capture`: `proc.kill()` then wait for EOF) — **not the process
   tree**: a command that forked keeps its children running, and the call returns only when they close the
   output pipe (measured: a 1 s timeout on `sleep 8; echo hi` returned after 8.1 s). A timed-out run is
@@ -963,10 +1058,13 @@ are the intended way to give the agent shell-like reach, not the raw `!` escape.
 - [ ] `debug` = **off** (`ServerCfg.debug=False`).
 - [ ] Tailscale Serve HTTPS up; the app reachable **only** via `https://<host>.<tailnet>.ts.net`, nothing
       port-forwarded publicly.
-- [ ] `shell.user_exec_enabled` / `shell.agent_exec_enabled` set to what you actually intend (default off) —
-      and remember neither stops an agent that runs at `full`: that takes `shell.enabled: false` (§5).
-- [ ] **Every agent / automation at `privilege: full` is one you meant** — `full` runs `run_shell` and every
-      forced-confirm tool without asking (§5, §2.14).
+- [ ] `shell.enabled` + `shell.user_exec_enabled` / `shell.agent_exec_enabled` set to what you actually
+      intend (the two toggles default off) — the agent toggle binds at every privilege; `full` still runs
+      `run_shell` UNASKED when the toggle is on (§5).
+- [ ] **Every agent / automation at `privilege: full` is one you meant** — `full` runs every forced-confirm
+      tool without asking, and `run_shell` too while the agent toggle is on (§5, §2.14).
+- [ ] **The startup log names no secret under `redact.min_len`** (§2.4) — a value it names is not masked in
+      tool output until you rotate it.
 - [ ] No secrets tracked in git: `config.yaml`, `.env`, `clients/`, `*_prompt.*` all gitignored.
 - [ ] MCP / OpenAPI tools reviewed + risk-annotated; no blanket `ALLOW`.
 - [ ] **`tool_overrides.<tool>.approvals` reviewed** (§2.5) — every standing "always allow" rule is one you
@@ -1002,5 +1100,5 @@ are the intended way to give the agent shell-like reach, not the raw `!` escape.
 
 ## References
 - Enforced rules for agents: [`AGENTS.md`](../AGENTS.md) §6 · Deploy/exposure: [`DEPLOY_EMMA.md`](./DEPLOY_EMMA.md) · DECISIONS D1 (Tailscale Serve HTTPS), D3 (hybrid execution model), D32 (topology), D44 (persisted approvals — §2.5), D65 (the media write path — §2.7; spec of record [`MEDIA_MANAGER_PLAN.md`](./MEDIA_MANAGER_PLAN.md)), D68 (chat attachments — §2.8; [`ATTACHMENTS_PLAN.md`](./ATTACHMENTS_PLAN.md)), D70 (card/lorebook imports — §2.9; [`ROLEPLAY_PLAN.md`](./ROLEPLAY_PLAN.md), dossier [`R73`](./research/R73-cross-origin-write-defense.md)), D71 (the live-voice WebSocket admission — §2.10; [`LIVE_VOICE_PLAN.md`](./LIVE_VOICE_PLAN.md) §3), D72 (the intermission wave: the app-wide form-body pin + `trusted_hosts`).
-- Code anchors: `config.py` (`ServerCfg`, `ShellCfg`, `ApprovalRule`/`ToolOverride`, `secret_values`/`mask_secrets`) · `core/permissions.py` (`decide`, `canonical_str`/`glob_escape`/`exact_arg_pins`/`approval_match`) · `core/tool.py` (registry, `ToolSpec`) · `services/action_service.py` (confirm-tokens, the gate consult + the `[auto-allowed: …]` marker) · `runtime.py` (`grant_approval`, `settings_write_lock`) · `core/redact.py` · `adapters/ssh.py` · `api/voice.py` (`_origin_allowed`, the WS admission) · `services/voice_live.py` (the relay's bounds + the injected bearer) · `main.py` (`_mount_trusted_hosts`).
+- Code anchors: `config.py` (`ServerCfg`, `ShellCfg`, `RedactCfg`, `ApprovalRule`/`ToolOverride`, `secret_values`/`short_secret_paths`/`mask_secrets`) · `core/permissions.py` (`decide`, `run_shell_gate`, `canonical_str`/`glob_escape`/`exact_arg_pins`/`approval_match`) · `core/tool.py` (registry, `ToolSpec`) · `services/action_service.py` (confirm-tokens, the gate consult + the `[auto-allowed: …]` marker, `_record` = the egress funnel) · `runtime.py` (`grant_approval`, `settings_write_lock`) · `core/redact.py` (`redact`, `redact_result`, `clip`, `TRUNCATION_MARKER`) · `api/actions.py` (the `ui_exposed` 404) · `adapters/ssh.py` · `api/voice.py` (`_origin_allowed`, the WS admission) · `services/voice_live.py` (the relay's bounds + the injected bearer) · `main.py` (`_mount_trusted_hosts`).
 - Hardening that closed the flagged gaps: [`PRE_DEPLOY.md`](./PRE_DEPLOY.md) steps 3 (secret-hygiene tests) + 4b (stale confirm-token recovery) — **both shipped 2026-07-02; the §3 register carries no open "gap → step N" rows.**

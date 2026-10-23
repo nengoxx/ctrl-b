@@ -154,9 +154,10 @@ icons = hand-inlined lucide geometry, the package is NOT a dep — AGENTS.md), t
 engine (`VAPOR_PATTERNS.md` governs net-new UI); **FastAPI +
 Uvicorn** backend; **typed-action registry** as the primary execution path plus a guarded `!`
 local-shell escape hatch (Phase 5, **built**; both `shell.*_exec_enabled` toggles default **OFF** —
-the user `!` path and the agent's `run_shell` alike, enable via Conf — but the agent toggle governs agents
-BELOW `full` only: a `full` caller runs `run_shell` with no confirm whether it is on or off, and the only
-off-switch at `full` is `shell.enabled: false`, ISS-87; open-terminal provides *remote* shell);
+the user `!` path and the agent's `run_shell` alike, enable via Conf; the gate follows the CALLER at every
+privilege: the agent toggle off → `run_shell` denied, `full` included; on → it asks below `full` and runs
+unasked at `full`; `shell.enabled: false` refuses everyone before any bubble (ISS-87, fixed — D87);
+open-terminal provides *remote* shell);
 **SQLite** for chat/events/automations + **markdown in git** for memories (`memories/`; the schema's `memory` table is unused) + **YAML** for config; voice via OpenAI-compatible **STT/TTS** and
 chat via OpenAI-compatible **llama.cpp**/cloud. The owner connects from Android — keep changes
 testable at narrow viewport widths (mic needs HTTPS via Tailscale Serve).

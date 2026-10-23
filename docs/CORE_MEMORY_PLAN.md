@@ -1375,8 +1375,9 @@ tokens of any kind · no cap raise beyond the measured one.
 4. **The `{{details}}` value carries its own lead-in** (`"\n\nIt returned: …"`) because a clause
    that must VANISH when there is no prior error cannot live in a single template — the
    `memory_cap_error` precedent, whose entire `{{details}}` prose is likewise code-supplied.
-5. **`POST /api/actions/core_memory` can no longer delete** (no `RecallState` ⇒ fail closed). That
-   is the design's intent; the corpus method remains available to a future Conf/API path that
+5. **`POST /api/actions/core_memory` can no longer delete** (no `RecallState` ⇒ fail closed). [Since
+   D87 (2026-10-22) `POST /api/actions/{name}` 404s a non-`ui_exposed` tool before `invoke`, so this path
+   is closed earlier.] That is the design's intent; the corpus method remains available to a future Conf/API path that
    obtains a hash itself.
 6. **The iteration measurement is bounded honestly.** Paging adds calls in proportion to topic SIZE,
    so 12/16 is the ceiling for the largest real family. It says nothing about a family of very many
@@ -1390,7 +1391,8 @@ tokens of any kind · no cap raise beyond the measured one.
    `ActionService._execute` (AST-pinned). Every `ActionService.invoke` caller was audited:
    `session.py` ×2 (the serial loop + the D40 parallel prefix) thread `self._recall`; the other
    seven pass fixed tool names that are not `core_memory` (`api/tools.py` is additionally gated on
-   `ui_exposed`) except `POST /api/actions/{name}`, which is item 5's fail-closed path. Both
+   `ui_exposed`) except `POST /api/actions/{name}`, which is item 5's fail-closed path [since D87
+   (2026-10-22) that route 404s a non-`ui_exposed` tool before `invoke`, so this path is closed earlier]. Both
    `AgentSession` construction sites (`api/agent.py`, `subagents.py`) get a `RecallState` by
    construction — `__init__` builds it and no caller can pass one — so subagent and
    automation/headless turns can delete. All three facts are test-pinned.

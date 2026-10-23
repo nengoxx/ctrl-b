@@ -909,7 +909,7 @@ e.g. `web_search` default result count, `dns_trace` record types / timeout, `ip_
   the same FastAPI**, not separate logic. Chat with the agent / trigger actions from Discord or
   Telegram.
 - **Design implication:** because all logic lives behind the typed API + action registry, a bot is
-  just another client calling `/api/agent/chat` + `/api/actions/*`. Keep the API the single source
+  just another client calling `/api/agent/chat` + `/api/actions/*` (the `ui_exposed` ones). Keep the API the single source
   of truth so frontends stay thin (browser PWA, native app, bots, automations all share it).
 - **Open:** auth/identity for bot channels (still tailnet-only? a bot bridges *out* to Discord/TG —
   reconcile with the no-public-exposure model: the bot process runs on the tailnet and polls those

@@ -189,12 +189,12 @@ improve — never weaken** them:
   calls **suspend on a confirm bubble**. The guarded `!` local-shell escape hatch **shipped** (Phase 5 —
   the user types `!<cmd>` → `POST /api/exec`; the agent's own tool is `run_shell`), and **both toggles
   default OFF**: `shell.user_exec_enabled` and `shell.agent_exec_enabled` are `False`
-  (`app/config.py` `ShellCfg`). **The agent toggle governs agents BELOW `full` only** — off → `run_shell`
-  DENIED, on → CONFIRM at `confirm`/`auto_low` (`readonly` is DENIED either way: `run_shell` is a HIGH
-  `action`); a `full` caller runs it with no confirm whether the toggle is on or off
-  (`core/permissions.py::decide`, pinned by `tests/test_shell_5.py`), so the only off-switch at `full` is
-  `shell.enabled: false` (ISS-87). `ui_exposed` is a listing flag, not a gate: `POST /api/actions/{name}`
-  reaches every registered tool behind its confirm token (ISS-88). Don't expose arbitrary shell beyond
+  (`app/config.py` `ShellCfg`). **The gate follows the CALLER at every privilege** (`core/permissions.py`
+  `run_shell_gate`, D87): the agent toggle off → `run_shell` DENIED, `full` included; on → CONFIRM at
+  `confirm`/`auto_low` and ALLOW at `full` (`readonly` is DENIED either way: `run_shell` is a HIGH
+  `action`); `shell.enabled: false` refuses every caller before any confirm bubble (pinned by
+  `tests/test_shell_5.py`; ISS-87 · ISS-102, fixed). `ui_exposed` is honoured by `POST /api/actions/{name}` —
+  a hidden tool 404s like an unknown one (ISS-88). Don't expose arbitrary shell beyond
   the tailnet, don't bypass the gate.
 - **Owner-file writes are raw-body `PUT` — never multipart, never `POST`.** Three routes write the
   owner's files: `PUT`/`DELETE /api/media/{ns}/files/{role}/{filename}` (D65), `PUT /api/attachments/

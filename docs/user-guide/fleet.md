@@ -117,20 +117,20 @@ command **on the server itself** (not on a fleet machine), as the server's user,
 agent reads them on its next turn. With no conversation open, a new one is created with the agent new conversations start with (`agent.default_agent`; blank = the root agent),
 titled `! <command>`. If the agent is in the middle of a turn in that conversation, the command is
 queued and runs at the turn's next step; if something else holds the conversation you see
-`// a turn is already running on this thread — wait for it to finish`. With User exec off you see
-`// shell exec is disabled (Conf → Shell → user exec)`.
+`// a turn is already running on this thread — wait for it to finish`. When the server refuses the
+command you see its reason: with User exec off, `// user shell exec is disabled (shell.user_exec_enabled)`;
+with **Conf → Shell → Enabled** off, `// user shell exec is disabled (shell.enabled)`.
 
-**Agent run_shell** is a separate switch for the agent's own `run_shell` tool. It works differently
-from what its label suggests ([ISS-87](../ISSUES.md)):
+**Agent run_shell** is a separate switch for the agent's own `run_shell` tool (automations' runs
+included), and it works as labelled at every privilege:
 
-- For an agent at **read** privilege: the tool is always refused, whatever the switch says.
-- For an agent at **confirm** or **auto-low** privilege: off = the tool is refused; on = you are asked
-  to confirm every call.
-- For an agent at **full** privilege (set in its `agent.yaml`, or by you with `/privilege full`):
-  `run_shell` runs **without asking, whether the switch is on or off**.
-- The only off-switch that also covers full privilege is **Conf → Shell → Enabled** (`shell.enabled:
-  false`), which makes every `run_shell` answer "local shell is disabled". It stops your `!`
-  commands too.
+- **Off:** the tool is refused at every level, **full** included; the refusal names
+  `shell.agent_exec_enabled`.
+- **On:** an agent at **confirm** or **auto-low** privilege asks you to confirm every call; an agent at
+  **full** privilege (set in its `agent.yaml`, or by you with `/privilege full`) runs it **without
+  asking**. At **read** it is always refused.
+- **Conf → Shell → Enabled** off (`shell.enabled: false`) refuses every `run_shell` and every `!`
+  command, before anything asks you.
 
 Both User exec and Agent run_shell are off by default.
 
@@ -189,14 +189,19 @@ startup, needs a server restart ([ISS-92](../ISSUES.md)).
   on the host". A `!` command past `shell.timeout_s` is reported as killed with no output, but only
   the shell itself is killed: a command it started in the background keeps running, and the reply
   can arrive late ([ISS-89](../ISSUES.md)).
-- **Output redaction.** `!` and `run_shell` output has your config's secrets masked; SSH output has
-  the machine's password masked; open-terminal output is not masked ([ISS-98](../ISSUES.md)).
-- **"Not in the UI" does not mean "not callable".** The generic action API, `POST
-  /api/actions/{name}`, can run any registered action, including the Tailscale Serve switches and
-  `run_shell`, behind the confirm step ([ISS-88](../ISSUES.md)). With Agent run_shell on, that route
-  runs a shell even while User exec is off.
+- **Output redaction.** Every tool's result — `!`, `run_shell`, SSH and open-terminal included — has
+  your config's secrets masked before you, the model or the history see it (one known gap: a
+  session-search snippet whose match markers or window edge fall inside a secret, [ISS-118](../ISSUES.md)). A secret
+  shorter than `redact.min_len` (8 characters) is not masked; the server log names which ones at
+  startup (an SSH action still hides its own machine's password in its output).
+- **Only results are masked.** What you or the agent type into a command or a tool call is stored as
+  typed — only results are masked.
+- **The action API refuses hidden actions.** `POST /api/actions/{name}` refuses an action that is
+  marked hidden from the UI (404, as for an unknown name; the catalog still lists it), so `run_shell`
+  and the Tailscale Serve switches cannot be run through it. The Tailscale switches have their own
+  Conf card; `run_shell` is the agent's and the `!` line's.
 - **`!` in an automation's conversation** (one a repeating automation keeps writing to) is refused,
-  and the app shows the same `// shell exec is disabled` note even when User exec is on.
+  and the note says why (it belongs to the automation's continuing conversation).
 - **Events are never deleted.** The events table grows for as long as the server runs.
 - **Notifications do not reach a closed app.** There is no push service yet.
 

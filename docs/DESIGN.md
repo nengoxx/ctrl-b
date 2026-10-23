@@ -292,7 +292,7 @@ class Decision(StrEnum): ALLOW="allow"; CONFIRM="confirm"; DENY="deny"
 
 def decide(spec: ToolSpec, privilege: Privilege, *, interactive: bool,
            run_shell_allowed: bool, approved: bool = False) -> Decision:   # `approved` = D44
-    if spec.name == "run_shell" and not run_shell_allowed and privilege != Privilege.FULL:
+    if spec.name == "run_shell" and not run_shell_allowed:   # = run_shell_gate(shell, actor) is None — EVERY privilege (D87)
         return Decision.DENY
     if privilege == Privilege.READONLY and spec.category in ("action",) and spec.risk != Risk.LOW:
         return Decision.DENY
@@ -1014,7 +1014,8 @@ the tool's `Literal` keeps the model on known keys).
   Topic content enters as ordinary **tool results** framed by `core_memory_recall` (visible,
   persisted, replay-stable). Mutations honor `memory.auto_write` (off ⇒ steering error) and a
   `Settings.secret_values()` containment gate evaluated over the **complete resulting file** —
-  **best-effort by construction**: values under `_SECRET_MIN_CHARS` (8, raw length) are skipped,
+  **best-effort by construction**: values under `redact.min_len` (default 8, raw length — the one floor the
+  redactor shares; `Settings.secret_values()` drops them) are skipped,
   since 1–4-char placeholder keys/passwords are substrings of ordinary prose and refusing on them
   bricks the write path (the 2026-08-17 live-drive fix; CORE_MEMORY_PLAN §14b). All gate
   evaluations run **before the first write** (a refusal is zero-write); the topic→index write
@@ -1161,6 +1162,7 @@ class Settings(BaseModel):
     searxng: SearxngCfg; embeddings: EmbeddingsCfg
     voice: VoiceCfg                                    # .stt / .tts / .live (LiveCfg — D71 call+dictation)
     open_terminal: OpenTerminalCfg; shell: ShellCfg; tailscale: TailscaleCfg
+    redact: RedactCfg                                  # .min_len — the redaction floor (D87)
     notifications: NotificationsCfg                    # foreground preferences only (F1) — §7
     wake: WakeCfg; monitor: MonitorCfg                 # D2-B connect + D2-A/D2-C presence; the monitor loop
     automations: AutomationsCfg                        # runner tunables; the definitions live in SQLite
@@ -1405,9 +1407,14 @@ router.
   gets a bounded, wire-visible same-endpoint retry first (`inference.retry_attempts`, fixed backoff curve —
   D43), then hops. On chain exhaustion → a `FailoverError` flattened to an `InferenceError` → friendly chat error,
   turn ends recoverably. `complete()`/voice keep straight next-hop (no retry tier).
-- **Redaction** (`core/redact.py`) runs where a capability calls it — as built: `run_shell` output (every config
-  secret), SSH action output/error (that host's password); **not** open-terminal output, and not an Event's
-  `summary` (`$ <command> — exit N`). Scope in SECURITY_MODEL §2.4.
+- **Redaction** (`core/redact.py`) runs once for every tool at the egress funnel: `ActionService._record`'s first
+  statement is `redact_result(result, settings.secret_values())`, masking `summary` / `output` / `error` / `data`
+  of every `invoke` outcome (DENY included; `artifacts` untouched) before it is returned, persisted, framed or
+  audited (D87, ISS-98). The per-action calls stay as defence in depth — `run_shell` output (every config secret,
+  before the clip), SSH action output/error (that host's password); `/agent/apply` masks its own result. `clip`
+  is the one truncation of result text (every cut ends in `TRUNCATION_MARKER`; the straddle rule masks a secret
+  a cut split). Secrets shorter than `redact.min_len` (8) are not masked (an SSH action still masks its own
+  machine's password). Scope + residuals in SECURITY_MODEL §2.4.
 
 ---
 
@@ -1567,7 +1574,8 @@ CONFIRM → server returns `{needs_confirm:true, confirm_token, prompt}` → the
 itself, no second dialog → execute → `{needs_confirm:false, result, event}` (→ activity SSE) → row updates.
 (So a MED action from the fleet UI would round-trip its token with no dialog at all — none exists today.)
 (`POST /api/tools/{name}` is a *different* surface: it invokes only `ui_exposed` **utility** tools —
-the Tools-tab cards, no confirm dance — and 404s anything else.)
+the Tools-tab cards, no confirm dance — and 404s anything else. `POST /api/actions/{name}` likewise 404s
+any tool that is not `ui_exposed`, exactly as for an unknown name — ISS-88, D87.)
 
 **Agent chat turn:** `POST /api/agent/chat {threadId, text}` → `AgentSession.run_turn` streams SSE
 (§12). If the model calls `shutdown_host`: `tool.permission` event → bubble → user confirms via
@@ -1613,7 +1621,8 @@ page only).
   the process tree**: a command that forked keeps its children running, and the call returns only when they
   close the output pipe (measured: a 1 s timeout on `sleep 8; echo hi` returned after 8.1 s). A timed-out run is
   state `error` with `data.timed_out` and **no output** (what was captured is discarded). Output is redacted
-  (config secret values), then truncated to `max_output_chars` keeping the HEAD with a `… [truncated]` marker.
+  (config secret values) at capture, then truncated to `max_output_chars` keeping the HEAD (`clip`,
+  `… [truncated]`), then redacted once more at the funnel (`ActionService._record`).
   Never a detached GUI window. *(A process-group kill is the code fix — not built; [ISS-89](./ISSUES.md).)*
 - **Agent:** malformed tool args → error result fed back for self-correction; call to
   unknown/disabled tool → DENIED with reason; **multiple** tool calls per step; tool exception vs
@@ -1657,7 +1666,7 @@ page only).
 
 | Add a… | Do this |
 |---|---|
-| **Action** | new fn in `services/actions/` with `@action(name, risk, confirm, ui_exposed)` + an input `BaseModel`. Auto: `POST /api/actions/{name}`, UI button, agent tool, events. **Declare `timeout_s`** (or triage into `ADAPTER_BOUNDED`) or the deadline gate fails (§3). |
+| **Action** | new fn in `services/actions/` with `@action(name, risk, confirm, ui_exposed)` + an input `BaseModel`. Auto: `POST /api/actions/{name}` (when `ui_exposed`), UI button, agent tool, events. **Declare `timeout_s`** (or triage into `ADAPTER_BOUNDED`) or the deadline gate fails (§3). |
 | **Utility tool** | `@tool(name, title, icon)` in `services/tools/` + input model. Auto: `POST /api/tools/{name}`, Utils card, agent tool. Same `timeout_s` rule (§3). |
 | **Built-in agent tool** | register a `Tool` via `@action(…, category="builtin")` (e.g. `task_plan`); appears in the toolset, gated by privilege. Same `timeout_s` rule (§3); set `core=True` only for the cognitive set. |
 | **MCP server** | add an entry to `settings.mcp_servers`; `McpClient` connects + wraps its tools. Zero code. |

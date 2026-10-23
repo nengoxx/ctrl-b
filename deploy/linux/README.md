@@ -327,9 +327,11 @@ instances today: **`emma-pockettts` → `emma-speaches` → `vault-alltalk`** (p
   (`LOOPBACK_HOST_URL=http://127.0.0.1:9000`)** — the realtime path needs this one (the failure without it is
   recorded in LIVE_VOICE_PLAN §7-S0). Health: `curl -s 127.0.0.1:9000/health`. Logs: `journalctl --user -u speaches`.
 - **PocketTTS (:8890) — the TTS primary.** `pockettts.service` (`~/github/PocketTTS.cpp/pocket-tts --server …
-  --port 8890`, voices under `~/.local/share/tts/voices/pocket`). The unit passes no `--host`, and the server
-  listens on **loopback only** (`127.0.0.1:8890` in `ss -ltnp`): both instances on this box reach it, but a TTS
-  consumer on another machine would need its own door to it. It pads every clip with silence, which
+  --port 8890`, voices under `~/.local/share/tts/voices/pocket`). It listens on **`0.0.0.0:8890`** since
+  2026-10-22 (`ss -ltnp`): the loopback bind was a local commit on `~/github/PocketTTS.cpp`, reverted as
+  `84f2a13`; upstream binds every interface and has no `--host` flag (the bind is compiled in). Both instances
+  on this box reach it over loopback, and the LAN + tailnet reach it like the other engines (the owner waiver,
+  `docs/SECURITY_MODEL.md` §2.1, ISS-106). It pads every clip with silence, which
   `voice.tts.trim_silence` (default on) trims server-side. (`pockettts-official.service`, :8892, is a separate,
   disabled experiment — not in either chain.) Logs: `journalctl --user -u pockettts`.
 

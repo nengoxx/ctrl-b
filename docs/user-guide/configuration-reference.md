@@ -413,16 +413,24 @@ The tools and their risk levels are registered **once, at startup**. A Conf chan
 
 A local shell on the machine that runs ctrl-b, with two independent doors: you typing `!<command>` in the composer, and the agent's `run_shell` tool. Both are **off by default**.
 
-**At full privilege the agent can run `run_shell` without a confirmation whether `agent_exec_enabled` is on or off.** At read privilege `run_shell` is always refused. At confirm and auto-low, the toggle decides: off refuses `run_shell`, on asks you to confirm each call. The only switch that stops an agent at full privilege is `enabled: false` ([ISS-87](../ISSUES.md)).
+**The switch is chosen by who is calling, at every privilege.** Your `!` reads `user_exec_enabled`; the agent's `run_shell` (an automation's included) reads `agent_exec_enabled`. With `agent_exec_enabled` off, `run_shell` is refused at every privilege, full included; with it on, it asks you to confirm each call at confirm and auto-low and **runs without asking at full**. At read privilege `run_shell` is always refused. `enabled: false` refuses both doors before anything asks you. A refusal names the key that is off.
 
 | key | type | default | what it does | applies |
 |---|---|---|---|---|
-| `enabled` | bool | `true` | Master switch. Off: every `run_shell` and `!` command is refused. **Security gate.** | live |
+| `enabled` | bool | `true` | Master switch. Off: every `run_shell` and `!` command is refused before any confirmation. **Security gate.** | live |
 | `user_exec_enabled` | bool | `false` | Allow `!<command>` from the composer. **Security gate.** | live |
-| `agent_exec_enabled` | bool | `false` | Allow the agent's `run_shell` below full privilege, with a confirmation each call (see above). **Security gate.** | live |
+| `agent_exec_enabled` | bool | `false` | Allow the agent's `run_shell`: off refuses it at every privilege; on asks each call below full and runs without asking at full (see above). **Security gate.** | live |
 | `workdir` | string | `""` | Working folder for commands. Blank means `$CTRLB_HOME`. | live |
 | `timeout_s` | number | `60` | A command is stopped after this many seconds, and reports an error with no output. Only the shell itself is killed; a process it started keeps running ([ISS-89](../ISSUES.md)). | live |
 | `max_output_chars` | int | `6000` | Output longer than this is cut, keeping the beginning. | live |
+
+## redact
+
+Secret masking in tool output: every tool's result is checked against the secrets in this file (API keys, SSH passwords, secret-looking `env`/`headers` entries) and each one found is replaced by `••••` before you, the model or the history see it. There is no Conf form for it.
+
+| key | type | default | what it does | applies |
+|---|---|---|---|---|
+| `min_len` | int | `8` | Secrets shorter than this are not masked in tool output (a short value is ordinary text, and masking it would reveal it). Values below the floor are named by config path in the server log at startup. The same floor decides which values Core Memory refuses to write. | live (the startup log line is written at boot only) |
 
 ## tailscale
 

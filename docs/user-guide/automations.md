@@ -78,7 +78,7 @@ automation's privilege is its permission:
 |---|---|
 | Read, Confirm | Only tools that run without asking: low-risk ones (ping, wake, web search, reading), plus any medium- or high-risk tool a saved always-allow rule covers (from the chat bubble, or added in [Tools](tools.md#the-agent-tools-catalog); never shut down, reboot, `run_shell` or `create_automation`, which no rule covers; at Read, only tools that are not fleet or host actions: MCP and OpenAPI tools, starting a subagent (its rule must be added in Tools; a fieldless rule works, and the bubble offers no always), and open-terminal reads if you raised their risk; fleet and host actions above low risk stay blocked, including open-terminal exec and write at their default high risk). Everything else that would ask is refused. |
 | Auto-low | Also medium-risk tools (for example starting a subagent, restarting a service). High-risk tools are refused unless a saved always-allow rule covers them (from the chat bubble, or added in [Tools](tools.md#the-agent-tools-catalog)). Shut down, reboot and `run_shell` are always refused. |
-| Full | Everything, including shut down, reboot and `run_shell`. |
+| Full | Everything, including shut down, reboot and — when Agent run_shell is on — `run_shell`. |
 
 The **Questions** setting covers questions only, never confirmations. An automation cannot create
 another automation, whatever its privilege.
@@ -140,8 +140,8 @@ The runner's own settings have no form in Conf; set them in `config.yaml` under 
 - **A missed run writes no event and sends no notification.**
 - **The server's timezone is read once.** Changing the machine's timezone takes effect for new
   automations after a server restart.
-- **Full privilege is real.** An automation saved at *Full* runs shut down, reboot and `run_shell`
-  without asking anyone ([ISS-87](../ISSUES.md) covers how `run_shell` behaves at full privilege).
+- **Full privilege is real.** An automation saved at *Full* runs shut down, reboot and — when Agent
+  run_shell is on — `run_shell` without asking anyone.
 
 ## Under the hood
 

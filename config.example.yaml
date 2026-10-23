@@ -714,7 +714,7 @@ open_terminal:
 # Guarded LOCAL shell (Phase 5) — on the machine that runs ctrl-b (open-terminal above is a REMOTE box).
 # Two independent doors, both OFF by default: `user_exec_enabled` = the `!<cmd>` composer escape hatch,
 # `agent_exec_enabled` = the agent's `run_shell` at EVERY privilege (off → denied; on → a confirm per call
-# below full, and an agent at full runs it unasked — ISS-87).
+# below full, and an agent at full runs it unasked — ISS-87, fixed 2026-10-22).
 # shell:
 #   enabled: true              # master switch; false → every run_shell / `!` is DENIED, before any bubble
 #   user_exec_enabled: false   # the `!<cmd>` composer escape hatch
@@ -724,9 +724,9 @@ open_terminal:
 #   max_output_chars: 6000     # output is cut to this, keeping the HEAD
 
 # Secret redaction: every tool result is masked against the secrets configured here before it is shown,
-# stored or sent to a model. Values shorter than `min_len` are never masked (a short value is ordinary text).
+# stored or sent to a model. Values shorter than `min_len` are not masked (a short value is ordinary text).
 redact:
-  min_len: 8                   # chars; 8 = the NIST password floor — shorter values are logged at startup
+  min_len: 8                   # chars; 8 = the NIST password floor — the config paths of shorter values are logged at startup (never the values)
 
 # Generic OpenAPI/REST tool servers (Phase 4f) — the HTTP sibling of mcp_servers, for Open WebUI
 # "tool servers" or any service exposing an OpenAPI doc. Each operation becomes a tool
