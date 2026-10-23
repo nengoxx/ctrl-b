@@ -18,7 +18,7 @@ from app.domain.result import ToolResult
 _MASK = "••••"
 #: Appended by `clip` to every cut of result text — `redact`'s straddle rule keys on it.
 TRUNCATION_MARKER = "\n… [truncated]"
-#: The shortest secret LEAD the straddle rule masks before the marker: a 3-char lead such as `sk-` is
+#: The shortest secret LEAD the straddle rule masks before a marker: a 3-char lead such as `sk-` is
 #: shared by every key of its kind and discloses nothing; 4+ chars of a specific value start to.
 _STRADDLE_MIN = 4
 
@@ -40,28 +40,38 @@ def _forms(secrets: Iterable[str | None]) -> list[str]:
     return sorted(out, key=len, reverse=True)
 
 
+def _mask_lead(head: str, forms: list[str]) -> str:
+    """The straddle rule on the text before one marker: the LONGEST lead (`len - 1` down to
+    `_STRADDLE_MIN` chars) of ANY form that `head` ends with is masked, once — longest across forms,
+    not first-match, so a short secret's lead is never left showing behind a longer secret's shorter one."""
+    best = 0
+    for form in forms:
+        for n in range(len(form) - 1, best, -1):
+            if n >= _STRADDLE_MIN and head.endswith(form[:n]):
+                best = n
+                break
+    return head[:-best] + _MASK if best else head
+
+
 def _redact_forms(text: str, forms: list[str]) -> str:
     for form in forms:
         if form in text:  # assign only on change — a str subclass (a `RunState` in `data`) passes as is
             text = text.replace(form, _MASK)
-    if text.endswith(TRUNCATION_MARKER):
-        head = text[: -len(TRUNCATION_MARKER)]
-        for form in forms:
-            for n in range(len(form) - 1, _STRADDLE_MIN - 1, -1):
-                if head.endswith(form[:n]):
-                    head = head[:-n] + _MASK
-                    break
-        text = head + TRUNCATION_MARKER
+    if TRUNCATION_MARKER in text:
+        parts = text.split(TRUNCATION_MARKER)
+        for i in range(len(parts) - 1):  # every segment a marker follows — trailing or embedded
+            parts[i] = _mask_lead(parts[i], forms)
+        text = TRUNCATION_MARKER.join(parts)
     return text
 
 
 def redact(text: str | None, secrets: Iterable[str | None] = ()) -> str | None:
     """Replace each non-empty secret value in `text` with a mask. Idempotent; order-independent (the
     forms are matched longest first, so nested secrets leave no remnant). Also masks each secret's
-    JSON-escaped form. **The straddle rule:** when `text` ends in `TRUNCATION_MARKER` (a `clip` cut),
-    a secret the cut split — its first `n` chars, `n` ≥ 4, just before the marker — is masked too; a
-    3-char lead such as `sk-` is not a disclosure. Recorded residual: two OVERLAPPING (not nested)
-    secrets may leave a fragment of the one replaced second."""
+    JSON-escaped form. **The straddle rule:** before each `TRUNCATION_MARKER` in `text` (a `clip`
+    cut, trailing or embedded), a secret the cut split — its first `n` chars, `n` ≥ 4, just before
+    the marker — is masked too; a 3-char lead such as `sk-` is not a disclosure. Recorded residual:
+    two OVERLAPPING (not nested) secrets may leave a fragment of the one replaced second."""
     if not text:
         return text
     return _redact_forms(text, _forms(secrets))

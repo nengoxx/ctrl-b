@@ -127,8 +127,9 @@ def run_shell_gate(shell: "ShellCfg", actor: Actor) -> str | None:
     """Which `ShellCfg` key closes `run_shell` for this caller, or None when it is open. The ONE
     predicate every run_shell gate site reads (`ActionService.invoke`, the batch classifier's decide
     mirror, `/api/exec` and both steer drains' pre-checks). `Actor.USER` = the owner's own doors (the
-    `!` path, the generic action API) → `user_exec_enabled`; every other actor (AGENT / AUTOMATION /
-    SYSTEM) is a model or the scheduler → `agent_exec_enabled` — fail-closed: a new actor is never
+    `!` path — `/api/exec` and its queued drains — and any other `Actor.USER` caller of `invoke`,
+    fail-safe) → `user_exec_enabled`; every other actor (AGENT / AUTOMATION / SYSTEM) is a model or
+    the scheduler → `agent_exec_enabled` — fail-closed: a new actor is never
     "the owner". `shell.enabled` closes it for everyone (ISS-102: decided here, before any bubble)."""
     if not shell.enabled:
         return "shell.enabled"

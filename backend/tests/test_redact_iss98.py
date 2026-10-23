@@ -2,8 +2,8 @@
 
 What's exercised:
   1. `redact` — nested secrets leave no remnant (either order) · the JSON-escaped form is masked inside
-     `json.dumps` text · the straddle rule (a secret cut before `TRUNCATION_MARKER` is masked at ≥ 4
-     chars, untouched at 3; no marker → no tail masking) · idempotent.
+     `json.dumps` text · the straddle rule (a secret cut before `TRUNCATION_MARKER`, trailing or
+     embedded, is masked at ≥ 4 chars, untouched at 3; no marker → no tail masking) · idempotent.
   2. `clip` at / below / above the limit; `redact_result` over summary/output/error and nested `data`.
   3. The funnel proof — a dummy tool returning a config secret in every field, and one raising with it,
      through the REAL `invoke`: the returned result AND the recorded Event carry no secret.
@@ -68,6 +68,23 @@ def test_the_straddle_rule() -> None:
     assert redact(no_marker, [secret]) == no_marker  # no cut → no tail masking
     once = redact("head " + secret[:6] + TRUNCATION_MARKER, [secret])
     assert redact(once, [secret]) == once  # idempotent
+
+
+def test_the_straddle_rule_before_an_embedded_marker() -> None:
+    """A clipped text joined mid-text (`subagents._aggregate` folding a non-last child's clipped
+    summary) — the lead before an INTERIOR marker is masked; the text after it is untouched."""
+    secret = "abcdefghij"
+    tail = "\n\n[1] b (ok):\nfine"
+    out = redact("[0] a (error):\nboom " + secret[:6] + TRUNCATION_MARKER + tail, [secret])
+    assert out == "[0] a (error):\nboom " + _MASK + TRUNCATION_MARKER + tail, out
+    # two secrets sharing a stem before the cut: the LONGEST lead of either is masked, not the first match
+    stem, stemmed = "abcd" + "Z" * 30, "LONGPREFIXabcd99999"
+    assert (
+        redact("x LONGPREFIXabcd" + TRUNCATION_MARKER + tail, [stem, stemmed])
+        == "x " + _MASK + TRUNCATION_MARKER + tail
+    )
+    three = "[0] a (error):\nboom " + secret[:3] + TRUNCATION_MARKER + tail
+    assert redact(three, [secret]) == three  # a 3-char interior lead is not a disclosure
 
 
 def test_blank_and_none_secrets_are_ignored() -> None:

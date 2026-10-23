@@ -1324,7 +1324,8 @@ class ShellCfg(BaseModel):
     model_config = {"extra": "allow"}
 
     enabled: bool = True  # master switch — off → every run_shell is DENIED, before any bubble (ISS-102)
-    #: the owner's `!` path (POST /api/exec) and the generic action API — OFF by default
+    #: the owner's `!` path (POST /api/exec and its queued drains) — any other `Actor.USER` caller of
+    #: `invoke` reads it too, fail-safe — OFF by default
     user_exec_enabled: bool = False
     #: the agent's `run_shell` tool at EVERY privilege (off → denied, on → a confirm per call below full;
     #: full runs unasked) — ISS-87

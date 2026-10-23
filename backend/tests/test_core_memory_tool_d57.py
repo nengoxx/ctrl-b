@@ -1026,8 +1026,8 @@ def test_a_multi_line_secret_in_a_create_field_is_caught_before_rendering(tmp_pa
 
 
 def test_a_blank_secret_field_does_not_match_everything(tmp_path):
-    """`secret_values()` drops empty strings but not whitespace-only ones — a blank config field must
-    never make every write look like a leak."""
+    """`secret_values()` drops blank (whitespace-only) values, and every value under `redact.min_len` —
+    a blank config field must never make every write look like a leak."""
     corpus = _with_secret(tmp_path, "   ")
     _root()
     run_async(corpus.create("Ordinary", "nothing secret here", None, "a body with spaces"))

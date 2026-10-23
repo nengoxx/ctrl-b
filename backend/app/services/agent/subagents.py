@@ -250,7 +250,7 @@ async def run_subagent(
         index=index,
         agent=agent_def.name,
         state=RunState.OK if text else RunState.ERROR,
-        summary=(text[:160] + "…") if len(text) > 160 else (text or "subagent produced no answer"),
+        summary=clip(text, 160) if text else "subagent produced no answer",
         output=text,
     )
 
