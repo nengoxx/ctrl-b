@@ -24,7 +24,8 @@
 #
 # TEMPLATE: install.sh renders __REPO__/__HOME__/__TMUX__ to real paths — do NOT copy directly.
 # (No network-online.target ordering — system target, no user equivalent; see the prod unit's note.
-# claude reconnects on its own once the network is up.)
+# claude does NOT register remote control once started offline, so start-claude.sh waits for claude.ai
+# before every launch, inside its loop — ISS-119.)
 [Unit]
 Description=ctrl-b Claude Code agent (%i) — tmux 'ctrl-b-%i', workspace
 

@@ -348,9 +348,12 @@ version (CLAUDE.md); a running session keeps its model until it restarts. Withou
 to its own latest Fable/Opus. **Both
 run with `--permission-mode bypassPermissions` by default** (`PERM` in `start-claude.sh`). Each ensures its tmux session exists, running
 `claude --remote-control` in the **workspace** — attach over SSH or drive from claude.ai/code. On boot
-the launcher **waits (≤60s) for network connectivity before starting claude** — the remote-control
-channel registers at claude startup and does NOT retry, so an early start would come up invisible to
-the claude app (post-reboot finding 2026-07-10). Skipped gracefully if the `claude` CLI isn't installed yet.
+the launcher **waits for claude.ai to answer before EVERY claude launch** (first start and each crash
+relaunch alike; `curl -sI` every 10 s, no time limit — an HTTP 403 counts as reachable) — the remote-control
+channel registers at claude startup and does NOT retry, so an offline start would come up invisible to
+the claude app (post-reboot finding 2026-07-10; ISS-119, 2026-10-24: the old bounded, pre-loop wait
+launched offline after a power outage). Reachability does not prove registration — a session that is up
+but not in the app still needs a manual restart (ISS-119's recorded limit). Skipped gracefully if the `claude` CLI isn't installed yet.
 - **One writer at a time.** Both sessions share the one workspace tree — use one agent per task; a
   genuinely SIMULTANEOUS second writer takes its own worktree (`tools/add-dev-worktree.sh`), same as before.
 - **Effort/permission overrides (no edits to tracked files; the model is fixed per instance — `MODEL` there

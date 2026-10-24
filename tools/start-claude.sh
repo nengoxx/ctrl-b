@@ -21,7 +21,7 @@
 # (which serves the workspace on main). Use tools/add-dev-worktree.sh, or by hand:
 #   git -C ~/github/ctrl-b worktree add ~/github/ctrl-b-feat -b feat/x
 #   ./start-claude.sh feat ~/github/ctrl-b-feat
-# Prereq: tmux installed (sudo apt install -y tmux) and `claude` on PATH (already: ~/.local/bin/claude).
+# Prereq: tmux + curl installed (sudo apt install -y tmux curl) and `claude` on PATH (already: ~/.local/bin/claude).
 set -euo pipefail
 
 SESSION="${1:-ctrl-b}"                              # tmux session + --remote-control channel name
@@ -40,6 +40,7 @@ PERM="${PERM:-bypassPermissions}"
 
 command -v tmux  >/dev/null || { echo "tmux not found — sudo apt install -y tmux"; exit 1; }
 command -v claude >/dev/null || { echo "claude not found on PATH"; exit 1; }
+command -v curl  >/dev/null || { echo "curl not found — sudo apt install -y curl (the connectivity wait needs it)"; exit 1; }
 
 # Exact-match ('=') targeting: session names like "ctrl-b (fable)" share the "ctrl-b" prefix, and
 # tmux -t otherwise prefix-matches — a bare name could hit the wrong session.
@@ -55,9 +56,15 @@ fi
 # NETWORK WAIT (post-reboot finding 2026-07-10): the --remote-control channel registers at claude STARTUP
 # and claude does NOT exit when that fails — at boot the unit fires seconds before the network is up, so
 # the session came up WITHOUT remote control (invisible in the claude app) and the crash-loop never
-# retried. Wait for connectivity first (bounded ~60s; instant when the network is already up).
-INNER="n=0; until curl -sI -m2 https://claude.ai >/dev/null 2>&1 || [ \$n -ge 30 ]; do n=\$((n+1)); sleep 2; done; \
- while true; do claude --remote-control \"$SESSION\" --permission-mode $PERM --model $MODEL --effort $EFFORT; \
+# retried. ISS-119 (2026-10-24, after a power outage): the wait runs before EVERY launch, inside the loop —
+# relaunches after a crash / auth-timeout / network blip wait too — and it is UNBOUNDED: no
+# give-up-and-launch-offline branch, since an offline launch comes up without remote control and never
+# recovers on its own. Instant when the network is already up. Deliberately no curl `-f` / no HTTP-200
+# requirement: claude.ai's root answers 403 over valid TLS — transport reachability, not an auth verdict.
+# Reachability does NOT prove RC registration (the limit ISS-119 records).
+INNER="while true; do echo '[waiting for claude.ai connectivity]'; \
+ until curl -sI -m5 https://claude.ai >/dev/null 2>&1; do sleep 10; done; \
+ claude --remote-control \"$SESSION\" --permission-mode $PERM --model $MODEL --effort $EFFORT; \
  echo '[claude exited — restarting in 5s; Ctrl-C to stop]'; sleep 5; done; exec bash"
 if ! tmux new-session -d -s "$SESSION" -c "$PROJECT" "$INNER" 2>/dev/null; then
   sleep 1
