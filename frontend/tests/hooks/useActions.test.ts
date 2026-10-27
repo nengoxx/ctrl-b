@@ -29,6 +29,7 @@ vi.mock("../../src/store/toast", () => ({ pushToast: h.toast }));
 vi.mock("../../src/store/confirm", () => ({ requestConfirm: h.confirm }));
 
 import { useFleetActions } from "../../src/hooks/useActions";
+import { FAILURE_TEXT_MAX } from "../../src/lib/failureText";
 import { pendingSnapshot, reconcilePending } from "../../src/store/fleetPending";
 import type { Host, InvokeResponse, ToolResult } from "../../src/types";
 
@@ -60,9 +61,13 @@ const HOST: Host = {
 };
 
 /** An `InvokeResponse` carrying a result in the given state — the only field `run` reads. */
-const answer = (state: ToolResult["state"], summary = "sent"): InvokeResponse => ({
+const answer = (
+  state: ToolResult["state"],
+  summary = "sent",
+  error: string | null = null,
+): InvokeResponse => ({
   needs_confirm: false,
-  result: { state, summary, data: {}, output: null, error: null, artifacts: [], duration_ms: 1 },
+  result: { state, summary, data: {}, output: null, error, artifacts: [], duration_ms: 1 },
 });
 
 const kindOf = (id: string) => pendingSnapshot().get(id)?.kind;
@@ -114,7 +119,8 @@ describe("run() reports its outcome, and owns the pending record", () => {
     });
     expect(ok).toBe(false);
     expect(pendingSnapshot().has("atlas")).toBe(false); // nothing is coming up — assume nothing
-    expect(h.toast).toHaveBeenCalledWith("no MAC configured", "err");
+    // No reason on the result → the plain summary, on the ordinary timer (ISS-104 leaves it as it was).
+    expect(h.toast).toHaveBeenCalledWith("no MAC configured", "err", { sticky: false });
   });
 
   it("a THROWN request resolves false too — the error is handled here, never rethrown", async () => {
@@ -163,5 +169,58 @@ describe("run() reports its outcome, and owns the pending record", () => {
     });
     expect(ok).toBe(true);
     expect(pendingSnapshot().size).toBe(0);
+  });
+});
+
+// ISS-104 — the failure toast shows the REASON. `summary || error` could never reach the error (the
+// summary is never empty), so a wrong sudo password read only "failed to shut down atlas".
+describe("run() · the failure toast carries the reason", () => {
+  /** The last toast's arguments: `pushToast(text, kind, opts)`. */
+  const fail = async (
+    summary: string,
+    error: string | null,
+  ): Promise<[string, string, unknown]> => {
+    h.post.mockResolvedValue(answer("error", summary, error));
+    const result = runHook();
+    await act(async () => {
+      await result.current.run("ping", HOST);
+    });
+    return h.toast.mock.calls.at(-1) as [string, string, unknown];
+  };
+
+  it("shows summary: reason, and stays until tapped", async () => {
+    const call = await fail("failed to shut down atlas", "sudo could not authenticate");
+    expect(call).toEqual([
+      "failed to shut down atlas: sudo could not authenticate",
+      "err",
+      { sticky: true },
+    ]);
+  });
+
+  it("a long reason is cut at a word boundary to the display cap", async () => {
+    const reason =
+      "sudo could not authenticate — the SSH password must also be the sudo password, ".repeat(3);
+    const [text, kind, opts] = await fail("failed to shut down atlas", reason);
+    expect(kind).toBe("err");
+    expect(opts).toEqual({ sticky: true });
+    expect(text.length).toBeLessThanOrEqual(FAILURE_TEXT_MAX);
+    expect(text.startsWith("failed to shut down atlas: sudo could not authenticate")).toBe(true);
+    expect(text.endsWith("…")).toBe(true);
+    // the cut lands after a whole word: the text before the ellipsis is a prefix ending at a word end
+    const body = text.slice(0, -1);
+    expect(`failed to shut down atlas: ${reason}`.startsWith(`${body} `)).toBe(true);
+  });
+
+  it("a whitespace-only reason is no reason: the summary alone, on the ordinary timer (R28)", async () => {
+    expect(await fail("failed to shut down atlas", "  \n ")).toEqual([
+      "failed to shut down atlas",
+      "err",
+      { sticky: false },
+    ]);
+  });
+
+  it("a multi-line reason reads as one line", async () => {
+    const [text] = await fail("failed", "Sorry, try again.\nsudo: 3 incorrect password attempts");
+    expect(text).toBe("failed: Sorry, try again. sudo: 3 incorrect password attempts");
   });
 });

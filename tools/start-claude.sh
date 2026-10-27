@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Claude Code remote agent on emma — the Linux equivalent of start_claude_remote.ps1.
+# Claude Code remote agent on emma — the Linux equivalent of tools/claude-fable.ps1 / claude-opus.ps1.
 #
 # WHY tmux: `claude --remote-control` REQUIRES a TTY (it cannot be a bare systemd/daemon process — verified:
 # github.com/anthropics/claude-code/issues/29479, #30447). tmux gives it a persistent TTY you attach to from
@@ -42,7 +42,7 @@ command -v tmux  >/dev/null || { echo "tmux not found — sudo apt install -y tm
 command -v claude >/dev/null || { echo "claude not found on PATH"; exit 1; }
 command -v curl  >/dev/null || { echo "curl not found — sudo apt install -y curl (the connectivity wait needs it)"; exit 1; }
 
-# Exact-match ('=') targeting: session names like "ctrl-b (fable)" share the "ctrl-b" prefix, and
+# Exact-match ('=') targeting: session names like `ctrl-b-fable` share the `ctrl-b` prefix, and
 # tmux -t otherwise prefix-matches — a bare name could hit the wrong session.
 if tmux has-session -t "=$SESSION" 2>/dev/null; then
   echo "Session '$SESSION' already running — attach with:  tmux attach -t '=$SESSION'"

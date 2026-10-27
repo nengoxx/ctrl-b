@@ -139,5 +139,6 @@ because code/config comment-anchors cite "§7":
    (and `tailscale.target_port`) and re-run `install.sh`. **Tailscale Serve** HTTPS is the only secure
    context (mic) — not the only ingress: plain HTTP on :5433 is reachable over the LAN and the tailnet
    under the waiver. Never widen beyond that — SECURITY_MODEL §2.1 is the full statement.
-2. **`debug=False` by default — an enabled debugger is a remote-code-execution surface**; never
-   enable it on anything reachable.
+2. **`server.debug` is off by default and only raises the `app` logger to DEBUG** — read once in
+   `main.py`'s lifespan (restart to apply); FastAPI gets no debug flag, so it enables no debugger and no
+   error pages ([ISS-97](./ISSUES.md) N2, owner-ruled 2026-10-27; SECURITY_MODEL §3).

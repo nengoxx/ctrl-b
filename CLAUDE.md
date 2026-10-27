@@ -184,7 +184,7 @@ workforce `claude-opus-5-5`. The pins live in ONE place since 2026-10-15 (ISS-10
 `~/.claude/settings.json` → `env.ANTHROPIC_DEFAULT_FABLE_MODEL` + `env.ANTHROPIC_DEFAULT_OPUS_MODEL`.
 emma's launchers pass the bare `fable`/`opus` alias and Claude Code resolves it through those two
 keys — `tools/start-claude.sh` (the `@fable`/`@opus` units) and the Agent tool's `model: "opus"`
-alike (the Windows launchers are not there yet — ISS-97 ④; the pins are per machine). Bump them
+alike (the Windows launchers `tools/claude-*.ps1` pass the same bare aliases since wave 3 — corsair's own `~/.claude/settings.json` must carry the two pin keys, or they float; the pins are per machine). Bump them
 there, after the test; a running session keeps its model until it restarts. **A missing key floats
 the alias to Claude Code's own latest model — a policy breach, silently** — and so does a project or
 local `.claude/settings{,.local}.json` (worktrees included) that sets the same keys, or a different

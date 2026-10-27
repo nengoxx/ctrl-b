@@ -464,6 +464,11 @@ Each cites the existing seam it extends. **All eight were ratified one-by-one wi
    (reuse `core/redact.py` — never index raw secrets). Indexes live **and** compacted messages
    (recall is the point). Returns ranked snippets with `thread_id` + `ts` + the recorded `agent`. A
    migration adds the FTS5 virtual table + sync triggers.
+   **AMENDED (owner, 2026-10-27 — wave 3, ISS-118):** the index holds RAW text (migration 3's triggers copy
+   the message text as stored); redaction runs at QUERY time, before the excerpt is cut — `session_search`
+   masks each matched message against the live config secrets, then cuts and marks the excerpt in Python, so a
+   cut or a mark can never split a secret ([ISS-118](./ISSUES.md)). The optional thread-id filter arg was never
+   built (recorded as [ISS-125](./ISSUES.md)).
 
 8. **`AgentSelector` seam (✅ decided 2026-06-14 — seam locked; default algorithm decided 2026-06-16).** A
    `SelectorProtocol` mirroring `SkillSelector`, **off unless `agent.auto_rotate`** is enabled
@@ -6388,5 +6393,5 @@ card shows explicit requests read back `default`.
 - **Rejected:** a per-tool redact in each adapter (leaves MCP/OpenAPI/web and every future tool); a pattern-based secret pass; a floor of 4 (it would mask the 4-char password everywhere and so reveal it).
 - **Evidence (R105):** 8/8 peers refuse a hidden tool · 5/5 gate the human's shell by caller · 6/8 mask at the sink by pattern and 0/8 have our shape — which is the CI-runner value-masking model (GitHub, GitLab) applied one step earlier.
 - **Council:** main-seat proposal (frozen) ∥ blind Opus → R105 → reconciled v1 → adversarial blind-Opus design review (0 H / 7 M / 7 L, all accepted) → v2 → confirm №1 → v3 → confirm №2 CLOSED. Build: one Opus lane; code review blind Opus SHIP (0 / 0 / 6 LOW, folded in the follow-up, confirmed); no Sonnet lane, by the owner's word that session.
-- **Residuals (SECURITY_MODEL §2.4 · §5):** tool-call ARGUMENTS are never masked; two overlapping secrets may leave a fragment; values under the floor stay unmasked until rotated; the cuts that are not `clip` (`core_memory.py`'s own `_clip` "…" cut — search excerpts, index titles/hooks — and its `[:cap]` clamps in `render_hits`/`_fit`; `attachments.py` ×1) have no straddle rule; search snippets can split a secret ([ISS-118](./ISSUES.md)); the actor is a door label — an agent that can reach ctrl-b's HTTP API can use an owner door that is open, or flip the shell toggles through `PUT /api/settings`, which any caller that can reach the API may use (the tailnet, and the LAN under the prod waiver — the trust model): the toggles bound the agent's own tool, not an agent you have given the network.
+- **Residuals (SECURITY_MODEL §2.4 · §5):** tool-call ARGUMENTS are never masked; two overlapping secrets may leave a fragment; values under the floor stay unmasked until rotated; the cuts that are not `clip` (`core_memory.py`'s own `_clip` "…" cut — search excerpts, index titles/hooks — and its `[:cap]` clamps in `render_hits`/`_fit`; `attachments.py` ×1) have no straddle rule; the actor is a door label — an agent that can reach ctrl-b's HTTP API can use an owner door that is open, or flip the shell toggles through `PUT /api/settings`, which any caller that can reach the API may use (the tailnet, and the LAN under the prod waiver — the trust model): the toggles bound the agent's own tool, not an agent you have given the network.
 - Supersedes D41's "the endpoint is the only home of the user-exec gate" (the chokepoint now also decides it) and the earlier entries' `FULL` exemption and listing-only `ui_exposed`; they stay as written.

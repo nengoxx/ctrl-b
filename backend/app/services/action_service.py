@@ -35,7 +35,7 @@ from app.core.permissions import (
     exact_arg_pins,
     run_shell_gate,
 )
-from app.core.redact import redact_result
+from app.core.redact import clip, redact_result
 from app.core.tool import InvocationContext, ToolRegistry, UnknownTool
 from app.domain.enums import Actor, Privilege, RunState
 from app.domain.event import DecisionReason, Event, Origin
@@ -54,6 +54,12 @@ _APPROVAL_MARKER = " [auto-allowed: {detail}]"
 #: (`terminal_write_file.content`, MCP tool args) — an untruncated pattern would copy them into the
 #: audit log on every run. Field NAMES stay full: which rule matched is the point of the marker.
 _APPROVAL_VALUE_MAX = 32
+#: The bound on the failure reason an audit row stores (`Event.error`, ISS-104). The funnel does not
+#: bound `output` (its large producers clip their own — `shell.max_output_chars`, the adapters' 6000),
+#: but `error` has producers with no limit at all — `_execute`'s catch-all `str(exc)`, an adapter's raw
+#: error — so the funnel clips it, generously enough that the producers' own 300-char clips pass whole.
+#: Public: the `/agent/apply` events (outside the funnel) bound theirs with the same constant.
+EVENT_ERROR_CHARS = 1000
 
 
 def _approval_detail(rule: "ApprovalRule") -> str:
@@ -344,7 +350,8 @@ class ActionService:
         arguments echoed back, no tool output)."""
         # The egress funnel: every `invoke` outcome passes here before it is returned, persisted, framed
         # or audited — nothing leaves the gate unredacted (ISS-98; SECURITY_MODEL §2.4). The summary,
-        # output, error and `data` are masked in place; then the audit row.
+        # output, error and `data` are masked in place; then the audit row. Its `error` is bounded AFTER the
+        # mask (ISS-104), so no cut can split a secret; the returned result keeps the whole reason.
         redact_result(result, self._deps.settings.secret_values())
         event = Event(
             actor=actor,
@@ -353,6 +360,7 @@ class ActionService:
             status=result.state,
             summary=result.summary,
             output=result.output,
+            error=clip(result.error, EVENT_ERROR_CHARS) if result.error else None,
             origin=origin.kind,
             origin_id=origin.id,
             run_id=origin.run_id,

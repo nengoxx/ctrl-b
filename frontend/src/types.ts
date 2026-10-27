@@ -221,6 +221,9 @@ export interface CtrlEvent {
   status: RunState;
   summary: string | null;
   output: string | null;
+  /** The failure reason (the result's masked `error`, bounded server-side — ISS-104, migration 9).
+   *  Optional: a server that predates the column never sends it; null on an OK outcome. */
+  error?: string | null;
 }
 
 /** `POST /api/actions/{name}` response — either a confirm prompt or an executed result. */

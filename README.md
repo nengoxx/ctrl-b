@@ -171,8 +171,7 @@ Full model: [`docs/SECURITY_MODEL.md`](./docs/SECURITY_MODEL.md). The short vers
   Tailscale Serve actions included (those have their own doors: `/api/exec` and Conf › Server › HTTPS access).
 - **Secrets never leave.** SSH passwords / API keys live in gitignored `config.yaml`/`.env`, are
   masked on API read, and are masked out of every tool result — open-terminal, MCP / OpenAPI and the web
-  tools included — at one chokepoint before the result is shown, stored or sent to a model (one known gap:
-  a session-search snippet whose match markers or window edge fall inside a secret, [ISS-118](./docs/ISSUES.md)); locked by
+  tools included — at one chokepoint before the result is shown, stored or sent to a model; locked by
   tests (`test_secret_hygiene.py`, `test_redact_iss98.py`). A secret shorter than `redact.min_len`
   (default 8 characters) is not masked (an SSH action still masks its own machine's password; the server
   log names short secrets at startup — rotate them).

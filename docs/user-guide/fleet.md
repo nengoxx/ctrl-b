@@ -34,12 +34,14 @@ shows.
 |---|---|
 | minimal | Wake on an offline card, Shut down on an online one (no Reboot, no Ping) |
 | cosmos | In the machine's detail view: Reboot and Shut down when online, Wake when offline, Ping always |
-| vapor | On the row itself: Reboot and Shut down when online, Wake when offline; Ping in the expanded row (the `› ssh` button beside it does nothing) |
+| vapor | On the row itself: Reboot and Shut down when online, Wake when offline; Ping in the expanded row |
 | frontier, gacha | In the machine's detail view: Reboot and Shut down when online, Wake when offline |
 
 There is no sleep or hibernate action. The buttons show whether or not the machine has the fields
 they need; pressing one it cannot do answers with a refusal toast (for example "no MAC configured
-for vega — cannot wake").
+for vega — cannot wake"). A failed action's toast reads "summary: reason" (for example "failed to
+shut down vega: sudo could not authenticate — …"), cut to 140 characters; a toast that carries a
+reason stays until you tap it.
 
 - **Wake** sends a Wake-on-LAN magic packet from the server. The toast "sent wake-up packet to …"
   means the packet left, not that the machine woke. The card then shows the machine as waking and
@@ -98,15 +100,16 @@ To be told about these on your phone, turn on **Conf → Notifications** and all
 the browser asks. Notifications need HTTPS, and they appear **only while the app is hidden**
 (another app in front, the screen off with the app still running), never while you are looking at
 it and never once the app is closed. Five event types can be switched on or off: agent needs you,
-turn finished, action failed, automation finished, host up / down. During a call, *turn finished*
-is not raised (you are hearing the reply).
+turn finished, action failed, automation finished, host up / down. An *action failed* notification
+reads the same "summary: reason" line as the toast. During a call, *turn finished* is not raised
+(you are hearing the reply).
 
 ### Events
 
 Every action, monitor transition and automation run is stored as an event in `ctrlb.db`. The app
 uses the live event stream to update itself, and the app bar shows **offline** or **reconnecting**
 while that stream is down. There is no in-app list of past events: read them with
-`GET /api/events?limit=N` (newest first, up to 500, including each action's output).
+`GET /api/events?limit=N` (newest first, up to 500, including each action's output and error).
 
 ### The `!` local shell
 
@@ -172,10 +175,9 @@ startup, needs a server restart ([ISS-92](../ISSUES.md)).
 - **A Windows machine shows offline while it is on.** Windows drops ping by default; allow inbound
   ICMP echo in its firewall.
 - **Preparing a Linux or macOS machine.** Password login over SSH for the SSH user, and either that
-  user's sudo password equal to the SSH password, or `NOPASSWD` for the commands. A button only
-  toasts "failed to shut down vega" (or "failed to reboot …"); the reason, for example "sudo could not
-  authenticate — the SSH password must also be the sudo password …", reaches the agent when it runs
-  the same action, and is not stored in the event.
+  user's sudo password equal to the SSH password, or `NOPASSWD` for the commands. Otherwise the button's
+  toast reads, for example, "failed to shut down vega: sudo could not authenticate — the SSH password
+  must also be the sudo password …".
 - **Preparing a Windows machine.** The OpenSSH Server feature with password authentication for an
   administrator account. Shutdown and reboot run `shutdown /s /f /t 0` and `shutdown /r /f /t 0`.
 - **Shutting down the server's own machine takes ctrl-b down with it.** Nothing warns you.
@@ -190,8 +192,7 @@ startup, needs a server restart ([ISS-92](../ISSUES.md)).
   the shell itself is killed: a command it started in the background keeps running, and the reply
   can arrive late ([ISS-89](../ISSUES.md)).
 - **Output redaction.** Every tool's result — `!`, `run_shell`, SSH and open-terminal included — has
-  your config's secrets masked before you, the model or the history see it (one known gap: a
-  session-search snippet whose match markers or window edge fall inside a secret, [ISS-118](../ISSUES.md)). A secret
+  your config's secrets masked before you, the model or the history see it. A secret
   shorter than `redact.min_len` (8 characters) is not masked; the server log names which ones at
   startup (an SSH action still hides its own machine's password in its output).
 - **Only results are masked.** What you or the agent type into a command or a tool call is stored as

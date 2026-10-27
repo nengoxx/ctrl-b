@@ -285,7 +285,8 @@ landed after iterating, and re-litigating them silently is the wrong move.
   is lifted verbatim into `themes/vapor/heroScene.ts` — don't re-derive it; restyle via the tokens.
 - **Fleet device row** (chat1/chat3) — tap to expand: services list (`.svc-row`, Phase 3) + a
   details strip (ip / mac / `ssh user@host:port` / os) + a dropfoot of footer buttons
-  (`$ ping`, `› ssh`, and an `↗ http://<ip>` link that replaced the old inline shutdown — wake/stop
+  (`$ ping` and an `↗ http://<ip>` link that replaced the old inline shutdown — a Wake button takes the link's
+  place while the machine is offline; the inert `› ssh` button was removed 2026-10-27, ISS-103 — wake/stop
   live as the mask-icon buttons in the row header). Only the **featured** machine gets the bright
   magenta→violet left bar + glow; other awake machines get a **muted violet left bar (~35%)**.
 - **Utils card** (chat1/chat3) — input + action button are **one flush unit** sharing an 8px radius

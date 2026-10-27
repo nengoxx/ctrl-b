@@ -288,7 +288,7 @@ rows are the routed adapter gaps above.
 | D22 unified overrides · D26 git-backup · D27 memory registry/state/reflection | **test-enforced** (decision-named drift-guards) |
 | SSE wire contract ↔ docs (DESIGN §12) | **test-enforced NOW** (QH-7); was prose-only + violated |
 | Server-OS branch allowlist (ARCH §6) · core→services layering | **test-enforced NOW** (QH-9); was prose-only (+1 undocumented branch) |
-| config.example.yaml validity | **test-enforced NOW** (QH-8); was nothing |
+| config.example.yaml validity | **test-enforced NOW** (QH-8); was nothing *(widened 2026-10-27, wave 3, into the config docs drift guard: the example's commented keys, the reference and `.env.example`, both ways against `Settings` — QUALITY.md)* |
 | Harness single-source (gates→check.py) | **structure-enforced** (hooks/CI/deploy all delegate — drift hunt found zero parallel command lists) + CI |
 | D33 harness shape | **tool/CI-enforced**; doc letter reconciled (QH-4) |
 | Test isolation (temp config/db) | **convention-only** → QH-10 (owner) |

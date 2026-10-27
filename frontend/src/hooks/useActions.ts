@@ -2,6 +2,7 @@ import { useCallback, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { getJSON, postJSON } from "../api/client";
+import { failureText, hasReason } from "../lib/failureText";
 import { requestConfirm } from "../store/confirm";
 import { beginPending, clearPending } from "../store/fleetPending";
 import { pushToast } from "../store/toast";
@@ -136,7 +137,11 @@ export function useFleetActions() {
           return true;
         }
         if (pendingToken !== null) clearPending(host.id, pendingToken);
-        pushToast(r?.summary || r?.error || "action failed", "err");
+        // ISS-104: the reason rides after the summary (it never showed — the summary is never empty), and
+        // a toast that carries one stays until tapped: the owner reads why, not just that it failed.
+        pushToast(failureText(r?.summary, r?.error) || "action failed", "err", {
+          sticky: hasReason(r?.error),
+        });
         return false;
       } catch (e) {
         if (pendingToken !== null) clearPending(host.id, pendingToken);

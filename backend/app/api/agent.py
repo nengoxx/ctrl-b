@@ -62,7 +62,7 @@ from app.core.fsutil import atomic_write_text, write_text_eol
 from app.core.media import StoreWriteError, role_dir
 from app.core.memory import StoreScope, StoreSpec, store_by_key
 from app.core.permissions import run_shell_gate
-from app.core.redact import redact_result
+from app.core.redact import clip, redact_result
 from app.domain.agent import AgentDef
 from app.domain.automation import AutomationSnapshot
 from app.domain.conversation import Message, Thread, ToolCallPart, ToolResultPart
@@ -71,6 +71,7 @@ from app.domain.event import ORIGIN_USER_CHAT, Event, Origin
 from app.domain.plan import Plan
 from app.domain.result import ToolResult
 from app.runtime import clear_reasoning_demotions, rediscover_integrations
+from app.services.action_service import EVENT_ERROR_CHARS
 from app.services.agent.attachments import claim_attachments
 from app.services.agent.card_export import ComposedCard, compose_card
 from app.services.agent.card_import import (
@@ -3407,13 +3408,15 @@ async def apply_proposal_endpoint(body: ApplyRequest, request: Request) -> dict[
             # Leave the proposal pending (it stays approvable/dismissable) and surface the failure.
             # C3-M2: a gate-denial / failed apply is auditable too — the owner clicked Approve and the
             # write did NOT run, so record it as a USER Event with the failure state (mirrors the
-            # success record below) rather than leaving a silent gap in the audit trail.
+            # success record below) rather than leaving a silent gap in the audit trail. ISS-104: the row
+            # carries the (already masked) reason, bounded exactly as the funnel bounds it.
             await deps.events.record(
                 Event(
                     actor=Actor.USER,
                     action=call_part.tool,
                     status=written.state,
                     summary=written.summary,
+                    error=clip(written.error, EVENT_ERROR_CHARS) if written.error else None,
                 )
             )
             return {
@@ -3462,7 +3465,13 @@ async def apply_proposal_endpoint(body: ApplyRequest, request: Request) -> dict[
                     ),
                 ) from exc
         await deps.events.record(
-            Event(actor=Actor.USER, action=call_part.tool, status=written.state, summary=written.summary)
+            Event(
+                actor=Actor.USER,
+                action=call_part.tool,
+                status=written.state,
+                summary=written.summary,
+                error=clip(written.error, EVENT_ERROR_CHARS) if written.error else None,
+            )
         )
         return {
             "call_id": body.call_id,

@@ -29,7 +29,7 @@ opens.
 | Wake says "sent" but the machine stays off | The packet only reaches the server's own network segment, and the machine must have Wake-on-LAN enabled | Put the server on the same LAN; enable WoL in the BIOS and network driver (Windows: turn off Fast Startup) |
 | "no MAC configured for … — cannot wake" | The machine has no MAC | Add it in Conf → Computers |
 | "no SSH credentials configured for … — cannot shut down" | SSH user or password missing; SSH is password-only, keys are never used | Set both in Conf → Computers |
-| Shut down or Reboot toasts only "failed to shut down …" / "failed to reboot …" | The SSH login or the command failed; the toast carries no reason. Often sudo: Linux/macOS shutdown, reboot and `sudo` in service commands use the SSH password for sudo | Ask the agent to run the same action: its result names the reason (for example "sudo could not authenticate — the SSH password must also be the sudo password …"). Make the passwords the same, or allow `NOPASSWD` for those commands |
+| Shut down or Reboot toasts "failed to shut down …: sudo could not authenticate — …" (or "failed to reboot …: …") | Linux/macOS shutdown, reboot and `sudo` in service commands use the SSH password for sudo | Make the passwords the same, or allow `NOPASSWD` for those commands. Any other reason after the colon names what failed (the SSH login, the command) |
 | A service has no start/stop button | There are none in any theme; service control is an agent tool | Ask the agent ([Fleet](fleet.md#services)) |
 | A service link opens the LAN address while you are away | minimal (the kit view) never rewrites links to the VPN host; the other themes do when ctrl-b is open over Tailscale | Set the machine's VPN host, and use another theme if you need it |
 | "it was not cancelled and may still be completing on the host" | An SSH action hit its time limit | Wait for the next poll before retrying |
@@ -126,8 +126,6 @@ opens.
 - Secrets shorter than `redact.min_len` (8 characters) are not masked in tool output (an SSH action
   still hides its own machine's password) — the server log names them at startup; rotate them.
 - What you or the agent type into a command or a tool call is stored as typed — only results are masked.
-- A past-conversation search snippet can show a secret when the search's match markers or the snippet's window edge fall inside it
-  ([ISS-118](../ISSUES.md)).
 
 **Settings and operations**
 - After a failed update, `update.sh` names the exact backups to restore (config and agent files of

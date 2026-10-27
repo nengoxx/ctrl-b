@@ -597,7 +597,8 @@ context, reactive `unavailable` after a server error.
 A **call overlay** (the kit's overlay pattern — form-sibling mount, the `.mform` lesson). Entry:
 a call button in the composer's voice cluster, rendered only when `voice.live` is
 configured+enabled. Minimal v1 — no waveforms, no partials (we have none), no speed slider
-(playbackRate exists in the player already). Theme-tokened; gacha/kit/frontier inherit through
+(*corrected 2026-10-27, ISS-97 ⑦:* there is no client `playbackRate` control; speech speed is the model's
+`speed`, sent to the server with each synthesis request). Theme-tokened; gacha/kit/frontier inherit through
 tokens (no per-theme bespoke work in v1).
 
 **The backdrop never goes away (owner ruling).** In BOTH overlay modes the call screen is the

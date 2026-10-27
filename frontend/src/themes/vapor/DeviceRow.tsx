@@ -217,7 +217,6 @@ function DeviceRowImpl({
         </div>
         <div className="dropfoot">
           <button onClick={(e) => act(e, () => invoke("ping"))}>$ ping</button>
-          <button onClick={(e) => e.stopPropagation()}>› ssh</button>
           {online ? (
             <a
               className="open"

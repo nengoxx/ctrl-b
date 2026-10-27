@@ -623,7 +623,7 @@ Saving a server through Conf applies at the next chat turn, or at once with the 
 | `auth_scheme` | string | `Bearer` | Prefix for the token; `""` sends the raw key. | next chat turn |
 | `auth_header` | string | `Authorization` | Header that carries the token. | next chat turn |
 | `headers` | map | `{}` | Extra headers. Values whose names look secret (token, key, auth, …) are masked in Conf. | next chat turn |
-| `include` | list of strings | `[]` | Only these operation ids or paths become tools. Empty means all. | next chat turn |
+| `include` | list of strings | `[]` | Only these operations become tools, each named by the tool name as the Tools catalog shows it, its operation id, or its path. Empty means all. | next chat turn |
 
 ## mcp_servers
 
@@ -686,7 +686,7 @@ Your fleet, keyed by host name. Edit it in Conf → Computers or by hand; the ge
 | `<host>.tags` | list of strings | `[]` | **Inert: [ISS-95](../ISSUES.md).** Stored, read by nothing. | inert |
 | `<host>.appearance` | map | `{}` | Per-theme presentation, `{theme: {…}}`; each theme defines its own keys (frontier reads `{x, y}`). | live |
 
-### computers.services
+### computers.<host>.services
 
 Services nested under a host, keyed by name; each gets the id `<host>.<service>`. Whether a service is up is worked out each poll and never stored.
 
@@ -700,4 +700,4 @@ Services nested under a host, keyed by name; each gets the id `<host>.<service>`
 
 ## Under the hood
 
-Design: [`docs/UPDATE_PLAN.md`](../UPDATE_PLAN.md) (config shape and migrations); the schema itself is `backend/app/config.py`.
+Design: [`docs/UPDATE_PLAN.md`](../UPDATE_PLAN.md) (config shape and migrations); the schema itself is `backend/app/config.py`. A test (`backend/tests/test_config_example_qh8.py`, the config docs drift guard) fails when this page or `config.example.yaml` drifts from the schema: a key with no row, a row naming no key, a default cell that differs from the schema's default, an example key (live or commented) the schema lacks, or a schema key the example never shows.

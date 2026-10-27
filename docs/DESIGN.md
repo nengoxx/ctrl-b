@@ -1107,10 +1107,13 @@ Tables: `threads`, `messages` (parts as JSON column; **+ a nullable `agent` colu
 `memory` (**reserved for the later vector store — unused in v1**, D14/D15), `events` (**+ the D49
 attribution quartet since migration v4: `origin` [immediate initiator, NOT NULL default
 `user_chat`] · `origin_id` · `run_id` [the transitive automation-ancestry key] · `decision` [why
-the gate allowed/denied]; reads coerce unknown values — `EventOriginKind`'s `unknown` sentinel is
+the gate allowed/denied]; **+ `error` since migration 9** ([ISS-104](./ISSUES.md): the result's masked failure
+reason, clipped at `EVENT_ERROR_CHARS`; NULL for an OK outcome and for rows written without a tool result) —
+it completes the result's text triple (`summary`/`output`/`error`) already modelled as sibling columns (migration
+4's precedent), not a new per-item dimension; reads coerce unknown values — `EventOriginKind`'s `unknown` sentinel is
 read-side only; **kept indefinitely — nothing prunes `events`**, and there is no in-app log view: read it with
-`GET /api/events?limit=N`, newest first, N clamped to 1–500, each row with its full `output` (redacted where §11 says), which the
-live `GET /api/events/stream` feed omits — `services/events.py` `recent`**), the A3/D49 pair `automations` + `automation_runs` (migration 5 — the definitions +
+`GET /api/events?limit=N`, newest first, N clamped to 1–500, each row with its full `output` (redacted where §11 says) and its `error`; the
+live `GET /api/events/stream` feed omits `output` only — `services/events.py` `recent`**), the A3/D49 pair `automations` + `automation_runs` (migration 5 — the definitions +
 their run ledger), `message_alternates` (migration 7, D81 — one row per VARIANT of an anchor's reply:
 `{id, thread_id, anchor_id → messages ON DELETE CASCADE (NULL reserved for the greeting-swipe seam), n,
 rows (JSON raw rows; NULL = the variant live in messages), created_at}`; per anchor 0 rows or N ≥ 2 with
@@ -1121,8 +1124,10 @@ notify-park) are **not built** — they "arrive with the phases that need them" 
 Migration application is **atomic per migration** (script + version stamp in one explicit
 transaction composed inside the script text; migrations author DDL/DML only — the runner owns
 transaction control, pinned by a statement-aware invariant test).
-A **`messages_fts` FTS5 virtual table** (+ sync triggers) backs `session_search`, indexed over
-**redacted** message text, covering live **and** compacted rows (D15 #7).
+A **`messages_fts` FTS5 virtual table** (+ sync triggers) backs `session_search`, indexed over the
+**raw** message text (the triggers copy it as stored), covering live **and** compacted rows (D15 #7, amended
+2026-10-27). Redaction runs at query time: `session_search` masks each matched row BEFORE it cuts the excerpt
+([ISS-118](./ISSUES.md)).
 
 ```python
 class Database:                        # app/db.py — owns the connection + write serialization
@@ -1138,9 +1143,9 @@ stash/swap/drop is one `transaction()`) (`services/conversation.py`), `EventServ
 `AutomationRepo` (`services/automations/repo.py` — one class for both automation tables).
 
 Migrations are **inline in `db.py`**, not a `schema.sql` file: `MIGRATIONS: list[tuple[int, str]]`
-(versions **1–8** today — 1 the base tables, 2 `messages.agent`, 3 `messages_fts`, 4 the event
+(versions **1–9** today — 1 the base tables, 2 `messages.agent`, 3 `messages_fts`, 4 the event
 attribution quartet, 5 the automations pair, 6 the per-model-call message metadata, 7 the D81 reply
-alternates, 8 the D84 `threads.seen_at` + per-agent index) applied in order and
+alternates, 8 the D84 `threads.seen_at` + per-agent index, 9 `events.error` (ISS-104)) applied in order and
 tracked in `schema_version`. No ORM — hand-written SQL is enough at this scale and keeps the dep surface
 small (D2).
 
@@ -1606,7 +1611,7 @@ playback; every other device plays it with ▶.
 
 **Automation:** scheduler fires → `AgentSession` with `interactive=False`, the automation's agent +
 privilege → gated calls are DENIED in place (confirm) or resolved by `question_policy` (questions) → results to an
-archived run thread + one Event per terminal → the `automation_done` notification while the app is open (hidden
+archived run thread + one Event per terminal → the `automation_done` notification while the app is hidden (a hidden
 page only).
 
 ---

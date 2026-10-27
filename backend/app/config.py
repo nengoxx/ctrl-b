@@ -193,10 +193,11 @@ def config_path() -> Path:
 
 class ServerCfg(BaseModel):
     host: str = "127.0.0.1"  # tailnet-only; fronted by Tailscale Serve for HTTPS
-    port: int = 5433  # 5433 so v2 runs alongside the live Flask app on 5432
+    port: int = 5433  # reported by /api/health only — the bind is the launcher's (ISS-91)
     poll_seconds: int = 5  # fleet status poll cadence
     feature_cycle_seconds: int = 6  # hero "now monitoring" auto-cycle period (online hosts only)
-    debug: bool = False  # off by default — debug is an RCE surface (ARCHITECTURE §7)
+    #: Off by default; ON raises the `app` logger to DEBUG (restart) — no debugger, no error pages.
+    debug: bool = False
     #: `Host` header allowlist — the anti-DNS-rebinding rail (R73 §4, SECURITY_MODEL §2.7/§2.9).
     #: EMPTY (the default) = not mounted at all: every name reaches the app, exactly as before.
     #: Non-empty ⇒ `TrustedHostMiddleware` is mounted at app construction and every OTHER name is
@@ -276,7 +277,7 @@ class ModelCfg(BaseModel):
     input_modalities: list[str] | None = None
     dim: int | None = Field(default=None, ge=1)  # embeddings vector dimension (Slice 2)
     voice: str | None = None  # TTS server voice id (Slice 2)
-    speed: float | None = Field(default=None, gt=0)  # TTS playback speed (Slice 2)
+    speed: float | None = Field(default=None, gt=0)  # TTS speech speed, sent to the server (Slice 2)
     language: str | None = None  # STT forced language (Slice 2)
     format: str | None = None  # TTS response container (Slice 2)
 
@@ -667,10 +668,10 @@ class SttServiceCfg(VoiceServiceCfg):
     # ISS-84 — THE CLIP UPLOAD's bounded, retried POST (client behavior, like the two above: nothing
     # here uploads; both ride `GET /voice/status` as ONE `stt_upload` object). One attempt covers the
     # upload AND the transcription (the response IS the transcript), so its horizon is derived on the
-    # client as `max(upload_timeout_s, the clip's own duration)`: a flat number would abort a long
-    # dictation whose ASR legitimately runs long (ASR_PLAN §3.8 T-9: a 30-min clip ≈ 2–4 min) and re-run
-    # it on every retry. This is that horizon's FLOOR, in seconds like its `*_s` neighbours; `le=600`
-    # also rejects `.inf`/NaN by bound.
+    # client as `max(upload_timeout_s, 2 × the clip's own duration)` (`useDictation.ts`
+    # `UPLOAD_REALTIME_FACTOR`): a flat number would abort a long dictation whose ASR legitimately runs
+    # long (ASR_PLAN §3.8 T-9: a 30-min clip ≈ 2–4 min) and re-run it on every retry. This is that
+    # horizon's FLOOR, in seconds like its `*_s` neighbours; `le=600` also rejects `.inf`/NaN by bound.
     upload_timeout_s: float = Field(default=30.0, gt=0, le=600)
     #: TOTAL attempts of one clip's upload before it is PARKED (Retry/Discard — never dropped); the
     #: backoff between them is derived on the client, not a third knob. 1 = ONE bounded attempt — not
@@ -1179,8 +1180,9 @@ class LiveCfg(VoiceServiceCfg):
 class TtsServiceCfg(VoiceServiceCfg):
     """TTS service (Phase 6; chunked synthesis = D63). `format` is the `response_format`/container —
     mp3 is the universally `<audio>`-seekable choice the mini-player needs for a WHOLE-clip synth.
-    Playback speed stays **client-side** (`<audio>.playbackRate`, live-adjustable without re-synth —
-    owner's call), so it's not here.
+    Speech speed is NOT a service key: a model's optional `speed` (`providers.<name>.models.<model>.speed`)
+    is sent with each `/v1/audio/speech` request (`VoiceAdapter.synthesize`); the PWA has no
+    playback-rate control.
 
     The `chunk_*` block is the D63 client policy: the reply is split into speakable chunks that
     synth+play sequentially on the one `<audio>` element (time-to-first-audio ~0.7 s vs ~13.6 s
@@ -1369,7 +1371,8 @@ class OpenApiServerCfg(BaseModel):
     doc. The spec is fetched from `spec_url` (or `base_url` + `/openapi.json`) at startup and each
     operation becomes a tool `api__<server>__<operationId>`. `risk` gates the **mutating** ops
     (POST/PUT/PATCH/DELETE → `risk`, default `med`); **GET/HEAD auto-run** (LOW) since they're reads.
-    Optional `include` allowlists operationIds/paths. Bearer auth via `api_key` (+ `auth_scheme`)."""
+    Optional `include` allowlists operations by the tool name as the Tools catalog shows it, its
+    operation id, or its path (ISS-101). Bearer auth via `api_key` (+ `auth_scheme`)."""
 
     model_config = {"extra": "allow"}
 
@@ -1390,7 +1393,9 @@ class OpenApiServerCfg(BaseModel):
     auth_scheme: str = "Bearer"  # prefix for the auth header value ("" → raw key)
     auth_header: str = "Authorization"
     headers: dict[str, str] = Field(default_factory=dict)
-    include: list[str] = Field(default_factory=list)  # optional operationId/path allowlist
+    #: Optional allowlist: each entry is the tool name as the Tools catalog shows it, its operation id,
+    #: or its path (ISS-101); blank = every operation.
+    include: list[str] = Field(default_factory=list)
 
 
 class McpServerCfg(BaseModel):

@@ -128,7 +128,7 @@ if [ ! -f "$CTRLB_HOME/config.yaml" ]; then
     install -m 600 "$HOME/.ctrl-b/config.yaml" "$CTRLB_HOME/config.yaml"
   else
     echo "ERROR: $CTRLB_HOME/config.yaml is missing."
-    echo "       PROD: transfer it first — python deploy/bootstrap.py  (from the Windows checkout),"
+    echo "       PROD: transfer it first — deploy/bootstrap.py, run from a checkout that holds config.yaml,"
     echo "             or scp config.yaml  emma:$CTRLB_HOME/config.yaml"
     echo "       DEV : run the PROD install first (so ~/.ctrl-b/config.yaml exists to seed from)."
     exit 1

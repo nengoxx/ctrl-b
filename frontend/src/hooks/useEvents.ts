@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
+import { failureText } from "../lib/failureText";
 import { publishNotify } from "../lib/notifyBus";
 import { applyThreadFrame, reconcileChat, type ThreadFrame } from "../store/chat";
 import { setConnection } from "../store/connection";
@@ -85,6 +86,8 @@ interface WireEvent {
   target?: unknown;
   status?: unknown;
   summary?: unknown;
+  /** The failure reason (ISS-104) — the masked, bounded `ToolResult.error`; absent from older servers. */
+  error?: unknown;
   /** Attribution (14a): the automation-run id, preserved through every descendant of a run. */
   run_id?: unknown;
   /** The initiator's id within its kind — for a run frame, the automation's id. */
@@ -191,7 +194,10 @@ export function notifyForEvent(raw: string): void {
     // The Event id is the durable identity of this record, so a re-delivery can't double-notify.
     key: `event:${str(ev.id) || `${action}:${target}`}`,
     title,
-    body: str(ev.summary) || (target ? `${action} · ${target}` : action),
+    // ISS-104: the same "summary: reason" line the fleet toast shows — a failure while the app is hidden
+    // reaches the owner only through this notification.
+    body:
+      failureText(str(ev.summary), str(ev.error)) || (target ? `${action} · ${target}` : action),
     // No `focus`: a fleet action failure is legible from any tab, and yanking the user off the
     // Agent tab mid-conversation to look at it would be worse than leaving them where they are.
   });

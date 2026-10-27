@@ -18,8 +18,11 @@ if ! tailscale serve --bg --https=443 5433; then
   exit 1
 fi
 
-# OPTIONAL — also expose the DEV server over HTTPS (so the mic works in dev too), on :8443:
-#   tailscale serve --bg --https=8443 5173
+# OPTIONAL — also expose the DEV stack over HTTPS (so the mic works in dev too), on :8443 → the dev
+# BACKEND, which serves its built frontend/dist (`npm run build` after an FE change; restart
+# ctrl-b-dashboard-dev once after the first build) — docs/HTTPS_TAILSCALE.md § Optional:
+#   tailscale serve --bg --https=8443 5434
+# Never drop `--https=…`: a bare `tailscale serve --bg <port>` re-points prod's :443.
 
 echo "✓ Done. The HTTPS dashboard URL (emma's MagicDNS name) is shown in the serve config below:"
 tailscale serve status

@@ -74,8 +74,7 @@ work there. To give dev its own secure context, put it on a **different** port s
 untouched. **Since 2026-09-25 the dev door fronts the DEV BACKEND serving its built `dist/`** (a
 prod-shaped page: no HMR socket, no reload-on-return — run `npm run build` after any FE change). The dev
 backend detects `frontend/dist` **once, at startup** (`backend/app/main.py`), so after the FIRST build restart
-`ctrl-b-dashboard-dev`, or :8443 answers API-only 404s. (`deploy/linux/serve-https.sh`'s comment still
-suggests `8443 → 5173`; the live door is `8443 → 5434`.)
+`ctrl-b-dashboard-dev`, or :8443 answers API-only 404s.
 
 ```sh
 tailscale serve --bg --https=8443 5434    # https://emma.<tailnet>.ts.net:8443 → dev backend (built dist)

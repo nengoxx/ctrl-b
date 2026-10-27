@@ -83,8 +83,8 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done.
       paramiko, wakeonlan, openai, httpx, pyyaml, python-multipart, youtube-transcript-api,
       beautifulsoup4, aiosqlite). *(Pins resolved + frozen at scaffold; venv `backend/.venv`.)*
 - [x] `frontend/` Vite + React 19 + TS scaffold (lift config from `ws_claude`): TanStack Query,
-      lucide-react, vite-plugin-pwa. Vite dev proxy `/api` → uvicorn `127.0.0.1:5433` (5433 to
-      coexist with the live Flask app on 5432 until cutover).
+      lucide-react, vite-plugin-pwa. Vite dev proxy `/api` → uvicorn `127.0.0.1:5433` (`server.port` is
+      only reported by `/api/health` — the bind is the launcher's command line, ISS-91).
 - [x] Copy `logo.png` + `favicon.ico` into `frontend/public/` (copy, don't import from old dirs).
 - [x] `config.py`: load/save `config.yaml` (reuse current shape) → typed `Settings`; secret masking.
 - [x] `db.py`: SQLite schema (threads, messages, memory, events) + tiny versioned applier.

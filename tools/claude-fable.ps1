@@ -2,7 +2,7 @@ $ErrorActionPreference = "Stop"
 
 $ProjectPath = "C:\Users\rovax\Documents\github\ctrl-b"
 $SessionName = "ctrl-b (fable)"
-$Model = "claude-fable-5"
+$Model = "fable"   # resolves through THIS machine's ~/.claude/settings.json env.ANTHROPIC_DEFAULT_FABLE_MODEL (the owner-tested pin, ISS-100; Fable = the main seat); a missing key floats to Claude Code's latest Fable
 $Effort = "high"
 $PermissionMode = "bypassPermissions"
 

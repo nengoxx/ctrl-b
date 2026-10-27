@@ -2,7 +2,7 @@ $ErrorActionPreference = "Stop"
 
 $ProjectPath = "C:\Users\rovax\Documents\github\ctrl-b"
 $SessionName = "ctrl-b (opus)"
-$Model = "opus"   # the bare alias tracks Claude Code's latest Opus (Opus 5 — the main model)
+$Model = "opus"    # resolves through THIS machine's ~/.claude/settings.json env.ANTHROPIC_DEFAULT_OPUS_MODEL (the owner-tested pin, ISS-100; Opus 5.5 as of 2026-09-23 = the workforce seat, Fable = the main seat); a missing key floats to Claude Code's latest Opus
 $Effort = "high"
 $PermissionMode = "bypassPermissions"
 
