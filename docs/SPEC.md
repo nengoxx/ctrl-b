@@ -432,6 +432,7 @@ erDiagram
         text origin_id "the automation id / subagent agent name"
         text run_id "the automation run (no FK - dangling after pruning is correct)"
         text decision "auto|confirmed|approval, or policy when denied"
+        text error "migration 9 (ISS-104): the masked failure reason, clipped"
     }
     AUTOMATIONS {
         text id PK
@@ -475,7 +476,8 @@ erDiagram
 Doctrine: **message-has-parts** (schema grows via the JSON union, not migrations); **compaction is
 an overlay** (`compacted` flag + summary system-message; full history immutable); events =
 domain-level audit trail — since migration 4 (D49) every row is **attributed** (`origin`/`origin_id`/
-`run_id`/`decision`), which is what makes an unattended automation run auditable. The `memory` table
+`run_id`/`decision`), which is what makes an unattended automation run auditable; since migration 9
+(ISS-104) a failed row also carries the result's masked reason (`error`). The `memory` table
 is created by migration 1 but **has no reader/writer**: tier-1 and tier-2 memory are markdown in the
 workspace git repo (§6.2), so it stays the reserved slot for a future vector store.
 ✅ SYS-1 closed: `Database.transaction()` (`db.py`) wraps multi-statement sequences in one

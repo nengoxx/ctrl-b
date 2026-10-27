@@ -30,7 +30,8 @@ const notifySwHash = createHash("sha256")
 const MEDIA_CACHE_ENTRIES = 240;
 
 // Dev: proxy /api to the FastAPI backend (single origin → no CORS, no mixed content).
-// Backend runs on 5433 so v2 coexists with the live Flask app on 5432 until cutover.
+// The prod backend listens on 5433 (the launcher's command line binds it — `server.port` is only reported
+// by /api/health, ISS-91).
 // The proxy target is `VITE_API_TARGET` (default :5433) so the SAME config serves both the local
 // Windows dev backend AND emma's isolated DEV instance, which points at its own backend on :5434
 // (D32 — prod :5433/~/.ctrl-b vs dev :5434/~/.ctrl-b-dev). No hardcoded port branch.

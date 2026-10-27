@@ -623,7 +623,7 @@ Saving a server through Conf applies at the next chat turn, or at once with the 
 | `auth_scheme` | string | `Bearer` | Prefix for the token; `""` sends the raw key. | next chat turn |
 | `auth_header` | string | `Authorization` | Header that carries the token. | next chat turn |
 | `headers` | map | `{}` | Extra headers. Values whose names look secret (token, key, auth, …) are masked in Conf. | next chat turn |
-| `include` | list of strings | `[]` | Only these operation ids or paths become tools. Empty means all. | next chat turn |
+| `include` | list of strings | `[]` | Only these operations become tools, each named by the tool name as the Tools catalog shows it, its operation id, or its path. Empty means all. | next chat turn |
 
 ## mcp_servers
 

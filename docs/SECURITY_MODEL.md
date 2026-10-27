@@ -23,7 +23,7 @@ The person who can reach the endpoint *is* the owner, by construction of the net
   or SSE frame, even when a command echoes them. For tool RESULTS and what is built from them (the Event row,
   the SSE frames, the API responses that carry a result) this is enforced once, at the tool-result boundary,
   for every tool (the egress funnel `ActionService._record`, §2.4), with the residuals §2.4 names (values
-  under `redact.min_len`, tool-call arguments, [ISS-118](./ISSUES.md)). Log lines are not passed through the
+  under `redact.min_len`, tool-call arguments). Log lines are not passed through the
   funnel: the shell and SSH actions redact their output at capture, the rule is that nothing logs a secret
   (the startup warning names config paths only), and a logged exception text is not masked. The config API
   read masks secrets separately (`mask_secrets`, §2.4).
@@ -236,18 +236,24 @@ so the classification can't silently rot. (Tests: `backend/tests/test_secret_hyg
   items recursed, keys and non-strings untouched) for **every `invoke` outcome** — executed, DENIED by policy,
   `record_policy_denial` — before the result is returned, persisted, framed or audited. Open-terminal,
   MCP / OpenAPI tools, the web tools, subagents and every future tool are covered by construction; the
-  Event's `summary` (`$ <command> — exit N`) is masked too, because it is the result's summary. `artifacts`
+  Event's `summary` (`$ <command> — exit N`) is masked too, because it is the result's summary. The Event row
+  stores `summary`, `output` and `error` from the MASKED result; its `error` (migration 9,
+  [ISS-104](./ISSUES.md)) is clipped AFTER the mask, with `clip` at `EVENT_ERROR_CHARS` (1000), so no cut splits a
+  secret, and the live event frame carries it (the frame leaves out only `output`). `artifacts`
   are left alone (server-side names/paths — masking one would break its download). The secrets are read live
   from the shared settings object on every call, so a Conf edit applies at the next call.
 - **Writers outside `invoke`:** `POST /api/agent/apply` (an owner-approved memory/skill proposal) masks itself
-  — it calls `redact_result` before it persists, audits or returns (`api/agent.py`). The others do not (see the
+  — it calls `redact_result` before it persists, audits or returns (`api/agent.py`); its two audit events store
+  the masked `written.error` under the same `EVENT_ERROR_CHARS` bound. The others do not (see the
   residuals): `POST /api/agent/plan`'s owner-authored `task_plan` call + result pair, the session's synthesized
   results for an `invoke` that raised, and the automation run bookkeeping.
 - **The per-action calls stay, as defence in depth** (calls to the one implementation, not a second
   mechanism): `run_shell` redacts its output against every config secret BEFORE clipping it
   (`services/actions/shell.py` `_run`); an SSH action's output and error are redacted against **that host's**
   password (`services/actions/_common.py`, `shutdown.py`, `reboot.py` — the raw password, whatever its
-  length); `session_search` redacts its snippets (one known gap, [ISS-118](./ISSUES.md)). A new tool needs no call of its own: the funnel is the
+  length); `session_search` redacts each matched message BEFORE cutting its excerpt (the `run_shell` order: the FTS index
+  holds raw text, so the whole row is masked first and only then cut and marked, in Python —
+  [ISS-118](./ISSUES.md), fixed 2026-10-27). A new tool needs no call of its own: the funnel is the
   guarantee.
 - **What `redact` matches:** each secret AND its JSON-escaped form (a value carrying `"`, `\` or a non-ASCII
   char reads differently inside `json.dumps` text), deduplicated and applied longest first (a secret nested
@@ -275,10 +281,6 @@ so the classification can't silently rot. (Tests: `backend/tests/test_secret_hyg
   arguments`, and the parallel path's catch-all `{tool} failed`, `session.py` `_invoke_error_result` — a
   non-`clip` `[:300]` cut of the exception text) sit outside the funnel; the model's own text is not masked
   either.
-- **`session_search` snippets ([ISS-118](./ISSUES.md), OPEN):** FTS5's `snippet()` (`services/conversation.py`)
-  wraps the query's matches in `«»` markers and opens its window with `…`; when a match or the window edge falls
-  INSIDE a configured secret stored in a message, the secret is no longer contiguous and neither the per-action
-  `redact` nor the funnel matches it (the straddle rule keys on `clip`'s marker, not FTS5's `…`).
 - **Value matching only:** a secret ctrl-b does not hold in its config is not recognised (no pattern pass —
   vendor key prefixes, JWTs — is built), nor is a held value echoed in another encoding (URL-encoded, base64);
   `data` is walked as dicts and lists (tuples pass through; keys are structure).
@@ -925,14 +927,14 @@ Honest register. "Accepted" = intended within the boundary; "gap → step N" = a
 |---|---|---|
 | Confirm-tokens don't authenticate | **accepted** | The tailnet is the auth (§1/§2.3). By design. |
 | **Confirm-tokens are in-memory** — a backend restart between mint and confirm orphaned the pending bubble | **closed (step 4b ✓ 2026-07-02)** | Robustness, not a breach — and no longer a gap: PRE_DEPLOY step 4b (J3) shipped server-side re-mint. The durable persisted `AWAITING_CONFIRM` call + the explicit `execute` are the confirmation, so `session.resume(execute)` re-mints via `ActionService.confirm_token_for()` and one click still works after a restart / 120 s expiry / reload. Test-locked by `test_confirm_recovery_j3.py`. (ACA Slice 1 later ruled the *orphan* token is CONSUMED on re-mint — §2.3.) |
-| Secret redaction / masking correctness | **test-locked (step 3 ✓; the funnel 2026-10-22, ISS-98)** | `test_secret_hygiene.py` proves every real secret is masked/collected/redacted, non-secrets never are, and the policy gate can't drift; `test_redact_iss98.py` proves every `invoke` outcome is masked at the egress funnel `ActionService._record` (open-terminal, a raising tool, the agent path). Note redaction is still *best-effort within* the `env`/`headers` maps (secret-named entries only) — by design (§2.4). **Residual:** a secret shorter than `redact.min_len` (default 8) is not masked — the startup warning names it; rotate it (§2.4, with the other residuals, incl. the `session_search` snippet gap [ISS-118](./ISSUES.md)). |
+| Secret redaction / masking correctness | **test-locked (step 3 ✓; the funnel 2026-10-22, ISS-98)** | `test_secret_hygiene.py` proves every real secret is masked/collected/redacted, non-secrets never are, and the policy gate can't drift; `test_redact_iss98.py` proves every `invoke` outcome is masked at the egress funnel `ActionService._record` (open-terminal, a raising tool, the agent path). Note redaction is still *best-effort within* the `env`/`headers` maps (secret-named entries only) — by design (§2.4). **Residual:** a secret shorter than `redact.min_len` (default 8) is not masked — the startup warning names it; rotate it (§2.4, with the other residuals). |
 | `paramiko` uses `AutoAddPolicy` (accepts unknown SSH host keys; no `known_hosts` pinning) | **accepted** | Acceptable only inside the trusted tailnet (`adapters/ssh.py`). Would need pinning if the boundary widened. |
 | Local shell (`!`) + agent `run_shell` = remote code execution by design | **accepted, off by default** | See §5. Both toggles default off; RCE is the point when enabled. The gate follows the CALLER at every privilege (`run_shell_gate`, ISS-87 fixed 2026-10-22): with `shell.agent_exec_enabled` off an agent is DENIED even at `full`; with it on, `full` runs `run_shell` unasked — so `full` + the agent toggle on = "this agent may run host shell". |
-| `debug` = RCE surface | **accepted, off by default** | `ServerCfg.debug=False`; never enable on anything reachable. |
+| `server.debug` raises the `app` log level | **accepted, off by default** | `ServerCfg.debug=False`. ON sets the `app` logger to DEBUG, read once at startup (`main.py`'s lifespan; restart to apply) — no debugger, no error pages, so it is not a code-execution surface (ISS-97 N2, owner-ruled 2026-10-27). DEBUG lines are more verbose, and log lines do not pass through the redaction funnel (§1). |
 | Dev Vite server exposes the API on the LAN (`0.0.0.0` + `/api` proxy) | **accepted, dev-only** | §2.1 dev-mode exposure; trusted home LAN. |
 | Prod backend on `0.0.0.0:5433` (LAN + tailnet, plain HTTP) | **accepted, owner waiver 2026-07-10** | §2.1; trusted home LAN; strictly narrower than the dev path above; Serve HTTPS remains for mic/secure-context. |
 | The voice engines on `0.0.0.0` (speaches `:9000` · parakeet-live `:9010` · parakeet-clip `:9011` · PocketTTS `:8890`) | **accepted, owner waiver 2026-10-22** ([ISS-106](./ISSUES.md); ASR_PLAN R10 for the ASR engines; PocketTTS opened by the owner the same day) | §2.1; LAN + tailnet reach is intended (other consumers on the owner's machines); free compute, no secrets, no fleet reach; DNS rebinding costs CPU/GPU time only. |
-| MCP / OpenAPI tool providers are external surfaces | **accepted, annotated** | Risk-annotated per tool; never grant blanket `ALLOW`. |
+| MCP / OpenAPI tool providers are external surfaces | **accepted, annotated** | Risk-annotated per tool; never grant blanket `ALLOW`. OpenAPI path values are one segment: values that are empty, `.`, `..` or contain `/` or `\` are refused before any request, and every other value is percent-encoded, so a value cannot add segments or traverse ([ISS-120](./ISSUES.md)). Which handler serves a legitimate single-segment value is the server's routing, not ctrl-b's: a server's `include` selects which tools the agent gets, it is not server-side access control. |
 | **`!exec` steer gate is enforced at DRAIN, not only at enqueue (D41)** | **accepted, fail-closed** | A `!<cmd>` steered into a busy turn checks the USER shell gate (`shell.enabled` + `shell.user_exec_enabled`, `run_shell_gate`) at enqueue (UX 403) **and again, live, at drain** — the drain is the only place `run_shell`@FULL actually runs, so disabling the shell mid-queue **drops** the queued command instead of running it. **Commit-before-run:** a harvested/crashed queue **loses** the command rather than double-running it (for a shell command, lost-on-crash beats double-run). |
 | **A persisted approval also auto-allows AGENT + headless re-runs of that exact call (D44)** | **accepted, deliberate** | Owner ruling ④ — approvals are actor-agnostic (§2.5). A grant given at a chat bubble silences the same call for the agent and headless subagents. Bounded by args-exact pinning, allow-only matching, the un-approvable forced-confirm rung, and the mandatory `[auto-allowed: …]` summary marker; revocable any time in Conf → Tools. Fail-closed on a miss (headless CONFIRM → DENIED, unchanged). |
 | **Approvals never expire in v1 (D44)** | **accepted** | No TTL / decay-on-disuse (that needs a queryable fire-log = an events-schema migration; reserved). A grant stands until revoked in Conf → Tools or `config.yaml`; revocation is live from the next invoke. |

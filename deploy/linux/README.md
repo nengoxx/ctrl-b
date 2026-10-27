@@ -733,8 +733,8 @@ deployed box is an unguarded release ([ISS-94](../../docs/ISSUES.md), §Fresh ma
 
 **`deploy/linux/serve-https.sh`** — no arguments: `tailscale serve --bg --https=443 5433` (prod), then prints
 `tailscale serve status`. Refuses (exit 1) when `tailscale` is missing or not connected; if `serve` needs
-privileges, run `sudo tailscale set --operator="$USER"` once. Its commented dev line names `5173`, but the live
-dev door is `:8443 → 5434` ([`docs/HTTPS_TAILSCALE.md`](../../docs/HTTPS_TAILSCALE.md#optional--https-for-the-dev-stack-too);
+privileges, run `sudo tailscale set --operator="$USER"` once. Its commented optional dev line is the live
+dev door, `:8443 → 5434` ([`docs/HTTPS_TAILSCALE.md`](../../docs/HTTPS_TAILSCALE.md#optional--https-for-the-dev-stack-too);
 [ISS-97](../../docs/ISSUES.md) ③). Off: §Stop / remove.
 
 **`deploy/linux/run.sh [prod|dev]`** — a foreground runner without systemd, from any directory (paths resolve
