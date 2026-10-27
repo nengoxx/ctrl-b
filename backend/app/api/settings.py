@@ -23,9 +23,10 @@ from app.runtime import apply_settings_patch, provider_rename_error, settings_wr
 
 router = APIRouter(tags=["settings"])
 
-#: Top-level config paths that can't be applied to the running process — persisted but flagged so
-#: the UI can say "restart to apply". host/port can't rebind the live uvicorn socket; debug is
-#: fixed at app construction (FastAPI(debug=…)).
+#: Top-level config paths read once at startup — persisted but flagged so the UI can say "restart to
+#: apply". `debug` is the `app` logger's level, set once in `main.py`'s lifespan (and echoed by
+#: `/api/health`). host/port bind nothing (the launcher's command line owns the bind — ARCHITECTURE
+#: §7.1, ISS-91): `port` feeds only `/api/health`, `host` nothing at all.
 _RESTART_REQUIRED = ("server.host", "server.port", "server.debug")
 
 

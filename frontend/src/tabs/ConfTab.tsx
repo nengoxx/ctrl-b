@@ -2744,7 +2744,7 @@ export function ConfTab({ active }: Props) {
               (`stt_upload`) to the mic's upload loop. */}
           <Field
             label="Upload timeout"
-            desc="seconds one clip-upload attempt may take (up to 600) — one attempt's floor: a long clip gets its own length"
+            desc="seconds one clip-upload attempt may take (up to 600) — one attempt's floor: a long clip gets twice its own length"
             value={String(vstt?.upload_timeout_s ?? "")}
             onChange={(v) => setStt("upload_timeout_s", v as unknown as number)}
           />
@@ -3330,7 +3330,7 @@ export function ConfTab({ active }: Props) {
       {/* F1 — placed right after the Voice groups: both are "how the app reaches out to you on this
           device", both depend on a secure context (Tailscale Serve HTTPS), and both mix a saved
           config preference with an immediate browser-capability gesture. */}
-      <ConfGroup id="notifications" num="12" title="Notifications" right="while the app is open">
+      <ConfGroup id="notifications" num="12" title="Notifications" right="while the app is hidden">
         <div className="conf-card">
           <SettingRow
             label="Enabled"
@@ -3339,7 +3339,7 @@ export function ConfTab({ active }: Props) {
                 ? "needs HTTPS (Tailscale Serve) — the browser hides notifications on a plain http origin"
                 : notifPerm === "denied"
                   ? "blocked in the browser — allow notifications for this site in its site settings"
-                  : "buzz this device on the events below. best-effort: delivery needs the app open or backgrounded — push to a closed app is a future feature"
+                  : "buzz this device on the events below — only while the app is hidden (another app or tab, or the screen off) and still running; never while you are looking at it; push to a closed app is a future feature"
             }
           >
             <Switch

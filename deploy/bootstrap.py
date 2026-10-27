@@ -15,7 +15,8 @@ Steps, each flag-gated so you can hand any of them to the owner:
   3. install (prod)  — deploy/linux/install.sh prod (prereq check + 3.14 venv + npm build + DB snapshot + units)
   4. https           — serve-https.sh (Tailscale Serve 443->5433; mic-ready)                            [--no-serve]
   5. dev (optional)  — ensure the ~/github/ctrl-b workspace + install.sh dev (isolated :5434 + Vite
-                       :5173 + the ALWAYS-ON ctrl-b-agent service — tmux Claude agent, boots with the box) [--with-dev]
+                       :5173 + the two boot agent units ctrl-b-agent@fable / @opus — tmux ctrl-b-fable /
+                       ctrl-b-opus Claude agents, boot with the box)                                  [--with-dev]
   6. claude-env      — migrate the Claude Code dev framework: git identity (copy-if-unset) + project
                        MEMORY → the target's ~/.claude/projects/<slug>/memory (skip-if-exists) + merge
                        missing keys into the target's ~/.claude/settings.json (target's values win)     [--claude-env]
@@ -457,7 +458,8 @@ def main() -> int:
         print("\nDEPLOY COMPLETE. Dashboard: https://<host>.<tailnet>.ts.net (see `tailscale serve status`).")
         if WITH_DEV:
             print(
-                f"  Agent service is up with the dev instance — attach:  ssh {host} -t 'tmux attach -t ctrl-b'"
+                f"  Agent units ctrl-b-agent@fable/@opus (if claude is installed) — attach:  "
+                f"ssh {host} -t 'tmux attach -t ctrl-b-fable'"
             )
         return 0
     finally:

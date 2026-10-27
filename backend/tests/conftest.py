@@ -4,7 +4,8 @@
 resolution (`config.home_path()`) is untouched. Scope: every test gets `CTRLB_HOME` pointed at a
 per-test temp dir, any inherited `CTRLB_CONFIG`/`CTRLB_DB` from the invoking shell is cleared, and
 every unqualified tempfile allocation is routed into storage the suite removes — a test's
-`tmp_path/"tmp"` (pytest's retention), or the suite home outside a test (removed at exit) (ISS-99).
+`tmp_path/"tmp"` (pytest's retention), or the suite home outside a test (removed at exit) (ISS-99);
+and a test that leaves `os.environ` changed fails at its own teardown, the env restored (ISS-117).
 
 Why: without this, a test that boots the app and forgets its own env isolation resolves
 `home_path()` to the **repo root** (config.py fallback) — proven 2026-07-07 to git-init a root
@@ -131,3 +132,71 @@ def _temp_under_tmp_path(tmp_path, monkeypatch):
     test must not assert it empty nor `mkdir` `tmp_path/"tmp"` without `exist_ok` (none does today). The
     shared `monkeypatch`, so its undo stays in one LIFO stack with any test's own patch of the same keys."""
     route_temp(monkeypatch, tmp_path / "tmp")
+
+
+#: Each test's starting `os.environ`: taken by `pytest_runtest_protocol`, checked at its teardown below.
+_ENV_SNAPSHOT = pytest.StashKey[dict[str, str]]()
+
+#: pytest's own per-stage marker. Excluded from the diff: the runner pops it only after `teardown_exact`
+#: RETURNS (`_pytest/runner.py`, `pytest_runtest_teardown`), so after a raising finalizer a stale value is
+#: in the next test's snapshot and every later test would report it (a cascade, reproduced 2026-10-27).
+_PYTEST_STAGE_KEY = "PYTEST_CURRENT_TEST"
+
+
+@pytest.hookimpl(wrapper=True, tryfirst=True)
+def pytest_runtest_protocol(item: pytest.Item, nextitem: pytest.Item | None):
+    """ISS-117: snapshot the environment before the test's setup, for `pytest_runtest_teardown` below.
+    The protocol hook is the one that encloses setup, call and the whole teardown (the shape of pytest's
+    own `LsofFdLeakChecker`); the check itself runs at teardown, where raising still reports."""
+    item.stash[_ENV_SNAPSHOT] = dict(os.environ)
+    return (yield)
+
+
+@pytest.hookimpl(wrapper=True)
+def pytest_runtest_teardown(item: pytest.Item, nextitem: pytest.Item | None):
+    """ISS-117, the env-leak guard: a test (its body, its fixtures, or a wider-scope finalizer that closes
+    at it) that leaves `os.environ` different from its snapshot fails with an ERROR at its own teardown,
+    after the environment is RESTORED (CPython regrtest's model) — so one leak is one red line, never a
+    cascade, and the next test starts clean. The rule it enforces: tests set env only through
+    `monkeypatch` / `pytest.MonkeyPatch.context()`, whose undo has run by now. The report names KEYS
+    only, never values (env holds secrets). When the wrapped teardown itself raised, the leak is added to
+    that exception as a note (one ERROR shows both causes) and the original exception propagates.
+
+    Blind spot (T-3, ISSUES ISS-117): the guard sees the net change across the test, not the window in
+    between — e.g. a helper that `pop`s `CTRLB_HOME` in its `finally` leaves it absent (`home_path()` =
+    the repo root) until the autouse undo restores it, and nets to zero. No mode switch, no exemption
+    marker (nothing needs one): a fixture that must span tests with env set gets a per-key exemption
+    marker THEN, not before — today the restore would undo its value after the first test, and its own
+    teardown would then fail too."""
+    try:
+        result = yield
+    except BaseException as exc:  # restore on EVERY path: a leaking AND raising finalizer is still caught
+        if leak := _restore_env(item):
+            exc.add_note(leak)
+        raise
+    if leak := _restore_env(item):
+        pytest.fail(leak, pytrace=False)
+    return result
+
+
+def _restore_env(item: pytest.Item) -> str | None:
+    """Put `os.environ` back to `item`'s snapshot (per key, `_PYTEST_STAGE_KEY` aside) and describe what
+    differed — key names only — or None when nothing did."""
+    before = item.stash[_ENV_SNAPSHOT]
+    now = {k: v for k, v in os.environ.items() if k != _PYTEST_STAGE_KEY}
+    was = {k: v for k, v in before.items() if k != _PYTEST_STAGE_KEY}
+    added = sorted(now.keys() - was.keys())
+    removed = sorted(was.keys() - now.keys())
+    changed = sorted(k for k in now.keys() & was.keys() if now[k] != was[k])
+    if not (added or removed or changed):
+        return None
+    for k in added:
+        del os.environ[k]
+    for k in removed + changed:
+        os.environ[k] = was[k]
+    parts = (
+        f"{label} {', '.join(keys)}"
+        for label, keys in (("added", added), ("removed", removed), ("changed", changed))
+        if keys
+    )
+    return f"env leaked by {item.nodeid}: {'; '.join(parts)}"

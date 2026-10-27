@@ -12,15 +12,27 @@ body (a nested `body` prop), with `#/components/schemas/...` `$ref`s rewritten t
 the schema needs no external resolution. On call, the flat args are split back into path
 substitutions, query params, and the JSON body.
 
+An optional per-server `include` allowlist selects operations by any of three spellings of the one
+operation id (`_op_id`): the tool name as the catalog shows it (`api__<server>__<id>`), the bare id
+(the operationId, or the `<method>_<path>` fallback `_build_op` names the tool from), or the raw
+path (ISS-101). `include` selects which tools the agent gets; it is not server-side access control.
+Path values are one segment — percent-encoded, with empty, ``.``, ``..``, ``/`` and ``\\`` refused
+before any request (servers such as Starlette decode ``%2F`` back to ``/`` before routing, so
+encoding alone would not do) — so a value cannot add segments or traverse (ISS-101 D). Which handler
+serves a legitimate single-segment value is the server's routing, not ctrl-b's.
+
 Risk: **GET/HEAD auto-run** (LOW — reads); mutating verbs use the server's configured `risk`
-(default `med` → confirm). Per-server failure isolation: a server whose spec won't load logs +
-registers nothing, never breaking startup.
+(default `med` → confirm). Failure isolation, two levels: a server whose spec won't load logs +
+registers nothing, never breaking startup; and within a loaded spec, one malformed operation logs a
+warning and is skipped (counted as `skipped` in the server's discovery summary) while the server's
+other operations still register (ISS-101 F).
 """
 
 from __future__ import annotations
 
 import logging
 import re
+import urllib.parse
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -40,6 +52,14 @@ log = logging.getLogger("ctrlb.openapi")
 
 _MAX_OUTPUT_CHARS = 6000
 _READ_METHODS = {"get", "head"}
+#: Path-parameter values refused outright (ISS-101 D): an empty value collapses a segment (`/users/`,
+#: `/users//x`) and `.`/`..` are dot-segments the HTTP client resolves — percent-encoding leaves all
+#: three as they are. Each would send the request to a path other than the operation's.
+_UNSAFE_PATH_VALUES = {"", ".", ".."}
+#: Characters a path value may not hold at all (ISS-101 D, R25): a path parameter is ONE segment, and
+#: an encoded separator does not stay one — servers decode `%2F` (Starlette does) or `%5C` before
+#: routing, so `admin/wipe` would reach `/users/admin/wipe`, an operation `include` excluded.
+_PATH_SEPARATORS = ("/", "\\")
 
 
 class OpenApiError(RuntimeError):
@@ -54,6 +74,12 @@ class _PassthroughArgs(BaseModel):
 
 def _qualified(server: str, op: str) -> str:
     return re.sub(r"[^A-Za-z0-9_-]", "_", f"api__{server}__{op}")[:64]
+
+
+def _op_id(method: str, path: str, op: dict) -> str:
+    """The operation's one id — its operationId, else `<method>_<path>` (method already lower-cased).
+    The tool name is `_qualified(server, _op_id(...))`; `include` matching uses the same id (ISS-101)."""
+    return op.get("operationId") or f"{method}_{path.strip('/').replace('/', '_') or 'root'}"
 
 
 def _rewrite_refs(node: Any) -> Any:
@@ -117,7 +143,9 @@ class OpenApiToolProvider:
             )
         return self._clients[server.name]
 
-    def _build_op(self, server: OpenApiServerCfg, method: str, path: str, op: dict, defs: dict) -> _Op:
+    def _build_op(
+        self, server: OpenApiServerCfg, method: str, path: str, opid: str, op: dict, defs: dict
+    ) -> _Op:
         params = [p for p in op.get("parameters", []) if isinstance(p, dict)]
         props: dict[str, Any] = {}
         required: list[str] = []
@@ -142,7 +170,6 @@ class OpenApiToolProvider:
         if defs:
             schema["$defs"] = defs
 
-        opid = op.get("operationId") or f"{method}_{path.strip('/').replace('/', '_') or 'root'}"
         risk = Risk.LOW if method in _READ_METHODS else server.risk  # server.risk: Risk (default MED)
         desc = op.get("summary") or op.get("description") or f"{method.upper()} {path}"
         return _Op(
@@ -157,7 +184,25 @@ class OpenApiToolProvider:
         )
 
     def _included(self, server: OpenApiServerCfg, opid: str, path: str) -> bool:
-        return not server.include or opid in server.include or path in server.include
+        """`include` matches the catalog name, the bare operation id, or the raw path (ISS-101)."""
+        include = server.include
+        return not include or opid in include or _qualified(server.name, opid) in include or path in include
+
+    @staticmethod
+    def _spec_map(server: OpenApiServerCfg, spec: dict, *keys: str) -> dict:
+        """The object at `spec[k0][k1]…` — `{}` when a level is missing/null, and `{}` + a warning when
+        one is anything else that is not an object, falsy ones included (R26/R29: `paths: 3`,
+        `paths: false` or `components: []` must not raise out of `discover`, nor pass unreported)."""
+        node: Any = spec
+        for i, key in enumerate(keys):
+            node = node.get(key)
+            if node is None:
+                return {}
+            if not isinstance(node, dict):
+                where = ".".join(keys[: i + 1])
+                log.warning("OpenAPI server %r: spec %s is not an object; ignored", server.name, where)
+                return {}
+        return node
 
     async def discover(self, registry: "ToolRegistry") -> list[dict]:
         """Fetch each server's OpenAPI doc and register a tool per operation. Per-server isolated."""
@@ -168,14 +213,20 @@ class OpenApiToolProvider:
                 resp = await self._http(server).get(spec_url)
                 resp.raise_for_status()
                 spec = resp.json()
+                if not isinstance(spec, dict):  # a JSON list/scalar is no OpenAPI document (R26)
+                    raise OpenApiError(f"spec is not a JSON object (got {type(spec).__name__})")
+                # Inside the same boundary (R32): a pathologically deep `components.schemas` makes
+                # the recursive `_rewrite_refs` raise `RecursionError` — that server's load error.
+                defs = _rewrite_refs(self._spec_map(server, spec, "components", "schemas"))
+                paths = self._spec_map(server, spec, "paths")
             except Exception as exc:  # noqa: BLE001 — a bad spec must not break startup
                 log.warning("OpenAPI server %r spec load failed: %s", server.name, exc)
-                summary.append({"server": server.name, "tools": 0, "error": str(exc)})
+                summary.append({"server": server.name, "tools": 0, "skipped": 0, "error": str(exc)})
                 continue
 
-            defs = _rewrite_refs(spec.get("components", {}).get("schemas", {})) or {}
             registered = 0
-            for path, item in (spec.get("paths") or {}).items():
+            skipped = 0
+            for path, item in paths.items():
                 if not isinstance(item, dict):
                     continue
                 for method, op in item.items():
@@ -183,36 +234,48 @@ class OpenApiToolProvider:
                         continue
                     if not isinstance(op, dict):
                         continue
-                    opid = op.get("operationId") or f"{method}_{path}"
-                    if not self._included(server, opid, path):
-                        continue
-                    built = self._build_op(server, method.lower(), path, op, defs)
-                    spec_obj = ToolSpec(
-                        name=built.name,
-                        title=built.name,
-                        description=built.description,
-                        category="mcp",  # external tool (shares the "remote tool" bucket; not a UI action)
-                        input_model=_PassthroughArgs,
-                        raw_schema=built.schema,
-                        risk=built.risk,
-                        read_only=built.method in _READ_METHODS,  # GET/HEAD → retry-safe (no state change)
-                        agent_exposed=True,
-                        ui_exposed=False,
-                        # Wall-clock backstop (ACA C2-M2): the httpx read timeout is per-chunk, so a
-                        # drip-feeding server would hold the turn forever. `timeout_s` hands the whole
-                        # call to `ActionService`'s outer `asyncio.wait_for` deadline. Per-server tunable
-                        # (`OpenApiServerCfg.call_timeout_s`, default 60s) — no hardcoding.
-                        timeout_s=server.call_timeout_s,
-                    )
+                    # Per-operation isolation (ISS-101 F): a malformed operation (`parameters: null`,
+                    # a parameter without `name`, a non-object `requestBody`, …) must not raise out
+                    # of `discover` — that aborts startup, or keeps every chat send failing on the
+                    # rediscovery retry. Skip it, log it, count it; the server's other ops register.
                     try:
-                        registry.register(
-                            OpenApiTool(spec=spec_obj, _provider=self, _server=server, _op=built)
+                        opid = _op_id(method.lower(), path, op)
+                        if not self._included(server, opid, path):
+                            continue
+                        built = self._build_op(server, method.lower(), path, opid, op, defs)
+                        spec_obj = ToolSpec(
+                            name=built.name,
+                            title=built.name,
+                            description=built.description,
+                            # external tool (shares the "remote tool" bucket; not a UI action)
+                            category="mcp",
+                            input_model=_PassthroughArgs,
+                            raw_schema=built.schema,
+                            risk=built.risk,
+                            # GET/HEAD → retry-safe (no state change)
+                            read_only=built.method in _READ_METHODS,
+                            agent_exposed=True,
+                            ui_exposed=False,
+                            # Wall-clock backstop (ACA C2-M2): the httpx read timeout is per-chunk, so a
+                            # drip-feeding server would hold the turn forever. `timeout_s` hands the whole
+                            # call to `ActionService`'s outer `asyncio.wait_for` deadline. Per-server tunable
+                            # (`OpenApiServerCfg.call_timeout_s`, default 60s) — no hardcoding.
+                            timeout_s=server.call_timeout_s,
                         )
-                        registered += 1
-                    except ValueError:
-                        log.debug("OpenAPI tool %r already registered; skipping", built.name)
-            log.info("OpenAPI server %r: registered %d tool(s)", server.name, registered)
-            summary.append({"server": server.name, "tools": registered, "error": None})
+                        try:
+                            registry.register(
+                                OpenApiTool(spec=spec_obj, _provider=self, _server=server, _op=built)
+                            )
+                            registered += 1
+                        except ValueError:
+                            log.debug("OpenAPI tool %r already registered; skipping", built.name)
+                    except Exception as exc:  # noqa: BLE001 — one bad operation must not sink the server
+                        log.warning(
+                            "OpenAPI server %r: skipped %s %s: %s", server.name, method.upper(), path, exc
+                        )
+                        skipped += 1
+            log.info("OpenAPI server %r: registered %d tool(s), skipped %d", server.name, registered, skipped)
+            summary.append({"server": server.name, "tools": registered, "skipped": skipped, "error": None})
         return summary
 
     async def call(self, server: OpenApiServerCfg, op: _Op, args: dict) -> ToolResult:
@@ -226,7 +289,18 @@ class OpenApiToolProvider:
                 continue
             val = args[name]
             if loc == "path":
-                url_path = url_path.replace("{" + name + "}", str(val))
+                # ISS-101 D: a raw value could carry `/`, `?` or `..` and re-route the request to an
+                # endpoint the `include` allowlist excluded (GETs auto-run). A path parameter is one
+                # segment: refuse what would not stay one (an empty/dot-segment value, a separator —
+                # an encoded `/` is decoded by the server before routing, R25); encode the rest.
+                sval = str(val)
+                if sval in _UNSAFE_PATH_VALUES or any(sep in sval for sep in _PATH_SEPARATORS):
+                    return ToolResult(
+                        state=RunState.ERROR,
+                        summary=f"{op.name} invalid path value",
+                        error=f"path parameter {name!r} is not one segment (empty, '.', '..', '/' or '\\')",
+                    )
+                url_path = url_path.replace("{" + name + "}", urllib.parse.quote(sval, safe=""))
             elif loc == "query":
                 query[name] = val
             elif loc == "header":

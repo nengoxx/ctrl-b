@@ -1,8 +1,8 @@
 """EventService — persist every privileged invocation as an `Event` and publish it live.
 
 One write path (SQLite, audit trail) + one live feed (EventBus → `/api/events/stream`), per
-DESIGN.md §0.5/§8/§12. `output` is redacted upstream by the action layer before it reaches here;
-this service does not handle secrets.
+DESIGN.md §0.5/§8/§12. `summary`/`output`/`error` are redacted upstream by the action layer before
+they reach here; this service does not handle secrets.
 
 The read (`recent`) is the ONE place a stored row becomes a domain `Event` again, so it is also the one
 place that tolerates a row this build cannot fully interpret — see `_origin_kind`/`_decision` for the
@@ -57,8 +57,9 @@ class EventService:
         """Persist + publish. Returns the event (id/ts already populated by the model)."""
         await self._db.execute(
             "INSERT INTO events "
-            "(id, ts, actor, action, target, status, summary, output, origin, origin_id, run_id, decision) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "(id, ts, actor, action, target, status, summary, output, error, "
+            "origin, origin_id, run_id, decision) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 event.id,
                 event.ts.isoformat(),
@@ -72,6 +73,7 @@ class EventService:
                 str(event.status),
                 event.summary,
                 event.output,
+                event.error,
                 event.origin,
                 event.origin_id,
                 event.run_id,
@@ -83,7 +85,7 @@ class EventService:
 
     async def recent(self, limit: int = 100) -> list[Event]:
         rows = await self._db.query(
-            "SELECT id, ts, actor, action, target, status, summary, output, "
+            "SELECT id, ts, actor, action, target, status, summary, output, error, "
             "origin, origin_id, run_id, decision "
             "FROM events ORDER BY ts DESC LIMIT ?",
             (max(1, min(limit, 500)),),
@@ -103,6 +105,7 @@ class EventService:
                 status=r["status"],
                 summary=r["summary"],
                 output=r["output"],
+                error=r["error"],
                 origin=_origin_kind(r["origin"]),
                 origin_id=r["origin_id"],
                 run_id=r["run_id"],

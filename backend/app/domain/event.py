@@ -1,11 +1,13 @@
 """Event — the single audit record for everything privileged (DESIGN.md §0.5, §8).
 
 Every action invocation writes one Event: it is both the audit trail (persisted in SQLite) and
-the live activity feed (published on the in-proc EventBus → `/api/events/stream`). `output` is
-redacted before write — SSH passwords / keys never land here.
+the live activity feed (published on the in-proc EventBus → `/api/events/stream`). `summary`,
+`output` and `error` are redacted before write — SSH passwords / keys never land here.
 
-The field set mirrors the `events` table (db.py migrations 1 + 4): id, ts, actor, action, target,
-status, summary, output + the attribution quartet (origin, origin_id, run_id, decision).
+The field set mirrors the `events` table (db.py migrations 1 + 4 + 9): id, ts, actor, action, target,
+status, the result's text triple summary / output / error (sibling columns — migration 9 added `error`
+on migration 4's sibling-column precedent, ISS-104) + the attribution quartet (origin, origin_id,
+run_id, decision).
 
 Attribution (D49 / AUTOMATIONS_PLAN §D-4) answers "who set this in motion, and why was it allowed"
 — the questions `actor` alone can't: `actor` is the audit *subject* (AGENT for a loop's tool calls,
@@ -112,6 +114,9 @@ class Event(BaseModel):
     status: StoredStatus
     summary: str | None = None
     output: str | None = None  # redacted + truncated upstream
+    #: The failure reason (`ToolResult.error`) — masked by the egress funnel and bounded there
+    #: (`ActionService._record`, ISS-104). None for an OK outcome and for records without a tool result.
+    error: str | None = None
     #: The `Origin` flattened onto the audit row (one column each, matching migration 4) — the shape
     #: a history query filters on. The defaults are exactly what a legacy row backfills to. `origin`
     #: is the WIDER read type: a stored row may degrade to `UNKNOWN_ORIGIN`, which an `Origin` cannot be.

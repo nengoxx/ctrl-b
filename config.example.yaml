@@ -2,6 +2,8 @@
 # fill in. Every key, its default and when a change applies: docs/user-guide/configuration-reference.md.
 # Unknown keys round-trip losslessly — which also means a MISSPELT key or section loads silently and does
 # nothing (no warning). Agents are FOLDERS ($CTRLB_HOME/agents/<name>/), never a list in this file.
+# Convention: a commented `key:` or `- ` line is real YAML at its real indent — uncomment it in place and
+# it loads (a test parses the file that way, both ways against the schema); prose lists use `·` bullets.
 #
 # This file is the UI-managed source of truth and the ONLY home for secrets (per-host SSH creds,
 # per-provider API keys). `.env`'s CTRLB_<SECTION>__<KEY> overrides reach DECLARED, ONE-LEVEL scalars
@@ -147,6 +149,7 @@ server:
 #       slots:
 #         wallpaper: {name: lyra-2.png}   # a pin: {name: <a file of the SOURCE role>} or {bundled: <shipped id>};
 #                                         # null = unpinned. Slots today: gacha `wallpaper` + `oracle` (from characters)
+#         oracle: {bundled: pegasus}      # the {bundled} form: one of the source role's shipped pictures
 
 # Composer attachments (D68) — files attached to a chat message. The FILES live under
 # $CTRLB_HOME/attachments/ (a flat `staging/` landing plus one directory per thread) and are written
@@ -204,10 +207,10 @@ providers:
     # retry_attempts: 0             # D43: per-provider override of the global inference.retry_attempts
     models:                         # name-keyed catalog; KEY = clean display name, id defaults to the key
       minig+:
-        # extra_body: per-MODEL OpenAI-SDK passthrough (ACA-18) — merged only into THIS model's call,
+        # `extra_body` = a per-MODEL OpenAI-SDK passthrough (ACA-18) — merged only into THIS model's call,
         # never blanket (OpenAI 400s on unknown args). The llama.cpp prompt-cache pin + telemetry:
-        #   cache_prompt: true       # protective on older llama-server builds (recent builds default true)
-        #   return_progress: true    # emit streaming prompt_progress so cache-hit telemetry shows up
+        #   · cache_prompt: true — protective on older llama-server builds (recent builds default true)
+        #   · return_progress: true — emit streaming prompt_progress so cache-hit telemetry shows up
         extra_body: { cache_prompt: true, return_progress: true }
         # context_window: 16384      # D42: manual per-model window; unset = auto-probed from llama.cpp
         #                            # /props (config always wins over the probe; cloud has no probe)
@@ -221,6 +224,8 @@ providers:
     api_mode: openrouter            # D45: reasoning.max_tokens when an agent sets an explicit
     #                               # reasoning_tokens, else reasoning_effort (our "off" → its "none");
     #                               # the two are MUTUALLY EXCLUSIVE upstream — sending both is a 400.
+    # max_tokens_field: max_completion_tokens  # D46: provider-wide output-cap field (max_tokens |
+    #                               # max_completion_tokens); a model's own wins; unset = derived from api_mode
     models:
       gemini:
         id: google/gemini-2.0-flash-exp:free   # wire model id sent to the server (hidden in UI when == key)
@@ -352,11 +357,10 @@ agent:
 # guards, compaction, routing, character fields, …) + SOUL.md (its persona). The root/default agent is
 # $CTRLB_HOME itself (its SOUL.md + `agent.defaults` above, no agent.yaml). Create and edit them in Conf;
 # a pasted `agents:` list here loads, does nothing, and warns nowhere. Field reference:
-# docs/user-guide/agents.md. A minimal agents/researcher/agent.yaml:
-#   model: { provider: cloud, model: gemini }
-#   tools: [web_search, "mcp__*"]
-#   skills: []               # opt out of intent-skill auto-narrowing (a capable model picks its own tools)
-#   privilege: confirm
+# docs/user-guide/agents.md. A minimal agents/researcher/agent.yaml (one key per line THERE; shown inline
+# here because a commented `key:` line in this file is a config.yaml key):
+#   · {model: {provider: cloud, model: gemini}, tools: [web_search, "mcp__*"], skills: [], privilege: confirm}
+# (`skills: []` opts out of intent-skill auto-narrowing — a capable model picks its own tools.)
 # Subagents INHERIT every parameter from the agent that spawns them; a named subagent overrides only
 # the fields its own agent.yaml sets. (Privilege is still clamped to the parent unless
 # agent.subagent_clamp_privilege: false.)
@@ -409,12 +413,12 @@ agent:
 # bypass a designer forced-confirm (shutdown_host / reboot_host / run_shell stay un-approvable).
 # Normally you don't hand-write these: tap "always" on a confirm bubble (the server writes an
 # args-exact rule) and manage/revoke them in Conf → Tools. The YAML shape, for reference:
-#   - a rule matches when EVERY field it lists matches (glob, `fnmatch`-style); rules are OR'd.
-#   - **patterns are STRINGS** — quote numbers/booleans (`port: "22"`, `force: "true"`), they're
+#   · a rule matches when EVERY field it lists matches (glob, `fnmatch`-style); rules are OR'd.
+#   · **patterns are STRINGS** — quote numbers/booleans (`port: "22"`, `force: "true"`), they're
 #     compared against the arg's canonical form (`5`, `1.5`, `true`, `null` for an omitted optional).
-#   - a field the rule OMITS is **unconstrained** — that's the deliberate widening semantics.
+#   · a field the rule OMITS is **unconstrained** — that's the deliberate widening semantics.
 #     `approvals: [{}]` (or `args: null`) is a whole-action grant: any args, always.
-#   - deleting the entry (or the whole list) revokes; revocation is live from the next call.
+#   · deleting the entry (or the whole list) revokes; revocation is live from the next call.
 # tool_overrides:
 #   ping_host: { description: "Check whether a fleet host is reachable right now (ICMP). Use before assuming a host is up." }
 #   web_search: { description: "Search the public internet. Use ONLY for information that isn't about the local fleet.", agent_mode: enabled }
@@ -502,8 +506,8 @@ agent:
 # Voice subsystem (Phase 6; A11/D48 Slice 2) — push-to-talk STT + read-aloud TTS. Each service POINTS at
 # the `providers` map above: a flat `provider` primary (+ `model`, omittable iff the catalog has exactly
 # one model) and an ordered `fallbacks` chain that ALWAYS walks on any failure (a down endpoint degrades;
-# there is deliberately no failover toggle). The per-service knobs stay here. The mic needs a secure
-# context: front the app with HTTPS (`tailscale serve --bg --https=443 5433`).
+# there is deliberately no failover toggle). The per-service knobs stay here. The mic needs a
+# secure context: front the app with HTTPS (`tailscale serve --bg --https=443 5433`).
 voice:
   enabled: true
   stt:
@@ -644,8 +648,8 @@ voice:
     ring: true             # CLIENT: overlay mode — true = a face ring over the art (one fixed position)
     captions: true         # CLIENT: the reply as small fading captions on the call screen
     # Streaming DICTATION (S2.5) — the mic's hold/lock rides the SAME realtime ear as the call, and
-    # each utterance final appends to the composer draft live. Independent of `enabled` in both
-    # directions: this switch alone opens the ear, no call feature required. OFF = today's whole-clip
+    # each utterance final appends to the composer draft live. Independent of `enabled` in
+    # both directions: this switch alone opens the ear, no call feature required. OFF = today's whole-clip
     # POST through voice.stt. All five are CLIENT knobs; the relay enforces none of them.
     dictation: false       # whole-feature toggle for streaming dictation
     tail_wait_ms: 2000     # how long the client waits for the TAIL final after its release flush
@@ -744,7 +748,8 @@ openapi_servers:
     enabled: true
     connect_timeout_s: 15
     call_timeout_s: 60       # wall-clock cap for ONE whole tool call
-    # include: [search, fetch]   # optional operationId/path allowlist
+    # include: [search, fetch]   # optional allowlist: the tool name as the Tools catalog shows it,
+    #                            # its operation id, or its path (ISS-101); omitted = every operation
 
 # MCP servers the agent connects to as a client (Phase 4f, D9). Each server's tools are discovered
 # at startup and merged into the agent's toolset, namespaced `mcp__<server>__<tool>`. A down server

@@ -176,6 +176,8 @@ def test_invoke_redacts_every_outcome_and_its_audit_row(tmp_path, monkeypatch) -
                 assert _MASK in _blob(out.result), name  # it WAS there, and was masked
                 (row,) = [e for e in run_async(c.app.state.events.recent(50)) if e.id == out.event.id]
                 assert SECRET not in (row.summary or "") + (row.output or ""), name
+                # ISS-104: the row now stores the reason too — copied from the MASKED result
+                assert row.error and SECRET not in row.error and _MASK in row.error, name
         finally:
             registry.remove("leaky_iss98")
             registry.remove("raising_iss98")

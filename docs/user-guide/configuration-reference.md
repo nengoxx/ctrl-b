@@ -686,7 +686,7 @@ Your fleet, keyed by host name. Edit it in Conf → Computers or by hand; the ge
 | `<host>.tags` | list of strings | `[]` | **Inert: [ISS-95](../ISSUES.md).** Stored, read by nothing. | inert |
 | `<host>.appearance` | map | `{}` | Per-theme presentation, `{theme: {…}}`; each theme defines its own keys (frontier reads `{x, y}`). | live |
 
-### computers.services
+### computers.<host>.services
 
 Services nested under a host, keyed by name; each gets the id `<host>.<service>`. Whether a service is up is worked out each poll and never stored.
 
@@ -700,4 +700,4 @@ Services nested under a host, keyed by name; each gets the id `<host>.<service>`
 
 ## Under the hood
 
-Design: [`docs/UPDATE_PLAN.md`](../UPDATE_PLAN.md) (config shape and migrations); the schema itself is `backend/app/config.py`.
+Design: [`docs/UPDATE_PLAN.md`](../UPDATE_PLAN.md) (config shape and migrations); the schema itself is `backend/app/config.py`. A test (`backend/tests/test_config_example_qh8.py`, the config docs drift guard) fails when this page or `config.example.yaml` drifts from the schema: a key with no row, a row naming no key, a default cell that differs from the schema's default, an example key (live or commented) the schema lacks, or a schema key the example never shows.

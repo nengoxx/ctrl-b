@@ -55,6 +55,22 @@ describe("notifyForEvent · which RunStates are a failure", () => {
 });
 
 describe("notifyForEvent · body + robustness", () => {
+  it("carries the failure reason after the summary (ISS-104)", () => {
+    notifyForEvent(
+      wire({
+        status: "error",
+        summary: "failed to shut down corsair",
+        error: "sudo could not authenticate",
+      }),
+    );
+    expect(captured[0].body).toBe("failed to shut down corsair: sudo could not authenticate");
+  });
+
+  it("reads the summary alone when the frame has no reason (an older server, an ok-shaped failure)", () => {
+    notifyForEvent(wire({ status: "denied", summary: "no MAC configured", error: null }));
+    expect(captured[0].body).toBe("no MAC configured");
+  });
+
   it("falls back to action · target when the Event carries no summary", () => {
     notifyForEvent(wire({ status: "error", summary: null }));
     expect(captured[0].body).toBe("wake_host · corsair");

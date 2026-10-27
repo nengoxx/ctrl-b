@@ -299,6 +299,17 @@ MIGRATIONS: list[tuple[int, str]] = [
         CREATE INDEX idx_threads_agent_updated ON threads(agent, updated_at);
         """,
     ),
+    (
+        9,
+        # The failure reason on the audit row (ISS-104). `error` is the masked `ToolResult.error`
+        # (`ActionService._record` copies it after the egress funnel's `redact_result`, bounded with
+        # `clip`), so the row holds the result's whole text triple — summary / output / error — as
+        # sibling columns, migration 4's precedent. NULL for an OK outcome and for every record written
+        # without a tool result (automation runs, monitor transitions). Purely additive: a build that
+        # predates it never names the column (`EventService` lists its columns explicitly), so prod
+        # rolls back by tag.
+        "ALTER TABLE events ADD COLUMN error TEXT;",
+    ),
 ]
 
 #: The ROOT agent's slug — `Settings.DEFAULT_AGENT_NAME`, restated here so this module keeps importing

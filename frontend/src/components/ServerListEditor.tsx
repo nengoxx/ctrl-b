@@ -344,7 +344,7 @@ function ApiForm(props: {
         <textarea
           aria-label="Include"
           className="kv-text"
-          placeholder="operationId or path (one per line; blank = all)"
+          placeholder="tool name as the catalog shows it, operation id, or path (one per line; blank = all)"
           value={d.includeText}
           onChange={(e) => set({ includeText: e.target.value })}
         />

@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import unicodedata
 import uuid
 from collections.abc import Collection, Sequence
 from dataclasses import dataclass
@@ -82,6 +83,20 @@ def _fts_query(raw: str) -> str:
     model-supplied query can't throw a syntax error; `""` (no word chars) signals "no query"."""
     tokens = re.findall(r"\w+", raw, flags=re.UNICODE)
     return " ".join(f'"{t}"' for t in tokens)
+
+
+def fts_tokens(text: str) -> list[str]:
+    """`text` split the way the `messages_fts` index matches it: letter/digit runs (`_` and every
+    other non-alphanumeric separate tokens), diacritics stripped (NFKD minus combining marks), casefolded
+    — so `Café_Bar` → `["cafe", "bar"]`. Lets a caller re-find in Python where a query hit a row.
+    WHY an approximation: it mirrors FTS5 `unicode61`'s DEFAULT tokenizer (migration 3 names no
+    options) without asking SQLite; where the two disagree on an exotic codepoint, the caller's excerpt
+    misses its anchor and falls back to the row's head — a less relevant window, never a leak (the
+    excerpt is cut from text already redacted, ISS-118)."""
+    folded = "".join(
+        ch for ch in unicodedata.normalize("NFKD", text) if not unicodedata.combining(ch)
+    ).casefold()
+    return re.findall(r"[^\W_]+", folded)
 
 
 class ThreadRepo:
@@ -620,8 +635,10 @@ class MessageRepo:
     ) -> list[dict[str, Any]]:
         """Full-text search over user/assistant message text (the `messages_fts` index, migration 3)
         — global across threads (D15 #7). Returns the best `limit` hits (FTS5 `rank`) as dicts with
-        the thread/agent context + a highlighted `snippet`. Archived (ephemeral subagent) threads are
-        excluded by default. Caller redacts the snippet before exposing it. Empty/word-less query → []."""
+        the thread/agent context + the row's full RAW `text` (the index holds unredacted text). No
+        excerpt is cut here: the caller redacts the whole `text` BEFORE any cut, so a cut can never
+        split a secret past `redact` (ISS-118 — FTS5 `snippet()` cut first). Archived (ephemeral
+        subagent) threads are excluded by default. Empty/word-less query → []."""
         match = _fts_query(query)
         if not match:
             return []
@@ -629,7 +646,7 @@ class MessageRepo:
             "SELECT f.message_id AS message_id, f.thread_id AS thread_id, "
             "       t.title AS thread_title, t.agent AS thread_agent, "
             "       m.role AS role, m.ts AS ts, m.agent AS agent, "
-            "       snippet(messages_fts, 0, '«', '»', '…', 12) AS snippet "
+            "       f.text AS text "
             "FROM messages_fts f "
             "JOIN messages m ON m.id = f.message_id "
             "JOIN threads t ON t.id = f.thread_id "
